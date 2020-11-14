@@ -197,5 +197,6 @@ void MatVecT(MatVecData *mv,
             }
          }
       }
+      #pragma omp barrier
    }
 }

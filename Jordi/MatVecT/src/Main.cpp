@@ -63,7 +63,7 @@ int main (int argc, char *argv[])
       mv.input.expand_flag = 0;
    }
 
-   double *x = (double *)calloc(num_cols, sizeof(double));
+   double *x = (double *)calloc(num_rows, sizeof(double));
    double *y1 = (double *)calloc(num_cols, sizeof(double));
    double *y1_exact = (double *)calloc(num_cols, sizeof(double));
    double *e1 = (double *)calloc(num_cols, sizeof(double));
@@ -79,20 +79,27 @@ int main (int argc, char *argv[])
       mv.y1_expand = (double *)calloc(mv.input.num_threads * num_cols, sizeof(double));
       mv.y2_expand = (double *)calloc(mv.input.num_threads * num_rows, sizeof(double));
    }
- 
+
+   srand(0);
+   for (int i = 0; i < num_rows; i++){
+      x[i] = RandDouble(-1.0, 1.0);
+   } 
    for (int run = 1; run <= num_runs; run++){
-      srand(0);
-      for (int i = 0; i < num_rows; i++){
-         x[i] = RandDouble(-1.0, 1.0);
-      }
       int iter;
       double start = omp_get_wtime();
       for (iter = 0; iter < mv.input.num_iters; iter++){
+         for (int i = 0; i < num_cols; i++){
+            y1[i] = 0;
+            if (mv.input.AAT_flag == 1){
+               y2[i] = 0;
+            }
+         } 
          MatVec(&mv, A, x, y1_exact);
          MatVecT(&mv, A, x, y1, y2);
 
          for (int i = 0; i < num_cols; i++){
             e1[i] = y1_exact[i] - y1[i];
+            //printf("%e %e\n", y1_exact[i], y1[i]);
          }
          if (mv.input.AAT_flag == 1){
             for (int i = 0; i < num_rows; i++){
