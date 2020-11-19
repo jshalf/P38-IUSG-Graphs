@@ -1,15 +1,17 @@
-SRCDIR = src
+SRCDIR = ../src
+ASYNC_JACOBI_SRCDIR = src
+
 CPPFILES = \
 	$(SRCDIR)/Misc.cpp \
 	$(SRCDIR)/Matrix.cpp \
-	$(SRCDIR)/Jacobi.cpp \
-	$(SRCDIR)/Main.cpp \
+	$(ASYNC_JACOBI_SRCDIR)/Jacobi_CSR.cpp \
+	$(ASYNC_JACOBI_SRCDIR)/Main.cpp \
 
 COMPILE = g++ -fopenmp -lm -O3 -std=c++11
 
 all: clean Main
 
-Main: $(SRCDIR)/Main.cpp
+Main: $(ASYNC_JACOBI_SRCDIR)/Main.cpp
 	$(COMPILE) $(CPPFILES) -o Main
 
 clean:

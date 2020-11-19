@@ -1,6 +1,6 @@
 #include "Matrix.hpp"
 
-void Laplace_2D_5pt(MatVecData *mv, CSR *A, int n)
+void Laplace_2D_5pt(InputData input, CSR *A, int n)
 {
    int col;
    int N = n*n;
@@ -54,7 +54,7 @@ void Laplace_2D_5pt(MatVecData *mv, CSR *A, int n)
       }
    }
 
-   if (mv->input.coo_flag == 1){
+   if (input.coo_flag == 1){
       A->i = (int *)calloc(A->nnz, sizeof(int));
       k = 0;
       for (int i = 0; i < A->n; i++){

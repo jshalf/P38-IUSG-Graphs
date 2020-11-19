@@ -1,5 +1,5 @@
 #include "Jacobi.hpp"
-#include "Matrix.hpp"
+#include "../../src/Matrix.hpp"
 
 double JacobiRelax(CSR A, double *b, double **x, double *x_prev, int i);
 double JacobiRelaxVolatile(CSR A, double *b, volatile double **x, volatile double *x_prev, int i);

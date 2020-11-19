@@ -20,6 +20,9 @@ typedef struct{
    int num_iters;
    int async_flag;
    int atomic_flag;
+   int AAT_flag;
+   int expand_flag;
+   int coo_flag;
 }InputData;
 
 typedef struct{
@@ -29,8 +32,13 @@ typedef struct{
 typedef struct{
    InputData input;
    OutputData output;
-}SolverData;
+   double *y1_expand;
+   double *y2_expand;
+}MatVecData;
 
-using namespace std;
+typedef struct{
+   InputData input;
+   OutputData output;
+}SolverData;
 
 #endif

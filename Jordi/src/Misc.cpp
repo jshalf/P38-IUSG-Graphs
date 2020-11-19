@@ -1,5 +1,21 @@
 #include "Misc.hpp"
 
+double RandDouble(double low, double high)
+{
+   return low + (high - low) * ((double)rand() / RAND_MAX);
+}
+
+double InnerProd(double *x, double *y, int n)
+{
+   double inner_prod = 0;
+   #pragma omp parallel for reduction(+:inner_prod)
+   for (int i = 0; i < n; i++){
+      inner_prod += x[i] * y[i];
+   }
+
+   return inner_prod;
+}
+
 double Residual2Norm(CSR A, double *x, double *b)
 {
    int n = A.n;
@@ -15,11 +31,6 @@ double Residual2Norm(CSR A, double *x, double *b)
       r_2norm += res*res;
       b_2norm += b[i]*b[i];
    }
-   
-   return sqrt(r_2norm)/sqrt(b_2norm);
-}
 
-double RandDouble(double low, double high)
-{
-   return low + (high - low) * ((double)rand() / RAND_MAX);
+   return sqrt(r_2norm)/sqrt(b_2norm);
 }

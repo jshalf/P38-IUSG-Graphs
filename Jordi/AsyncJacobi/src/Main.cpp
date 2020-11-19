@@ -1,6 +1,6 @@
-#include "Main.hpp"
-#include "Misc.hpp"
-#include "Matrix.hpp"
+#include "../../src/Main.hpp"
+#include "../../src/Misc.hpp"
+#include "../../src/Matrix.hpp"
 #include "Jacobi.hpp"
 
 int main (int argc, char *argv[])
@@ -51,7 +51,7 @@ int main (int argc, char *argv[])
       }
       else if (strcmp(argv[arg_index], "-num_runs") == 0){
          arg_index++;
-         num_runs = max(1, atoi(argv[arg_index]));
+         num_runs = std::max(1, atoi(argv[arg_index]));
       }
       else if (strcmp(argv[arg_index], "-verb_out") == 0){
          verbose_output = 1;
@@ -62,7 +62,7 @@ int main (int argc, char *argv[])
    omp_set_num_threads(solver.input.num_threads);
 
    CSR A;
-   Laplace_2D_5pt(&A, m);
+   Laplace_2D_5pt(solver.input, &A, m);
    int n = A.n;
    double *x = (double *)calloc(n, sizeof(double));
    double *b = (double *)calloc(n, sizeof(double));

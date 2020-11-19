@@ -14,6 +14,6 @@ typedef struct{
    int nnz;
 }CSR;
 
-void Laplace_2D_5pt(MatVecData *mv, CSR *A, int n);
+void Laplace_2D_5pt(InputData input, CSR *A, int n);
 
 #endif

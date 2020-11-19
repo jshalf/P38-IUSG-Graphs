@@ -1,15 +1,18 @@
-SRCDIR = src
+SRCDIR = ../src
+MATVECT_SRCDIR = src
+
 CPPFILES = \
 	$(SRCDIR)/Misc.cpp \
-	$(SRCDIR)/MatVec.cpp \
 	$(SRCDIR)/Matrix.cpp \
-	$(SRCDIR)/Main.cpp \
+        $(MATVECT_SRCDIR)/MatVec_CSR.cpp \
+	$(MATVECT_SRCDIR)/MatVec_COO.cpp \
+	$(MATVECT_SRCDIR)/Main.cpp \
 
 COMPILE = g++ -fopenmp -lm -O0 -std=c++11
 
 all: clean Main
 
-Main: $(SRCDIR)/Main.cpp
+Main: $(MATVECT_SRCDIR)/Main.cpp
 	$(COMPILE) $(CPPFILES) -o Main
 
 clean:

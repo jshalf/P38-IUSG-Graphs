@@ -1,7 +1,7 @@
-#include "Main.hpp"
+#include "../../src/Main.hpp"
 #include "MatVec.hpp"
-#include "Matrix.hpp"
-#include "Misc.hpp"
+#include "../../src/Matrix.hpp"
+#include "../../src/Misc.hpp"
 
 int main (int argc, char *argv[])
 {
@@ -35,7 +35,7 @@ int main (int argc, char *argv[])
       }
       else if (strcmp(argv[arg_index], "-num_runs") == 0){
          arg_index++;
-         num_runs = max(1, atoi(argv[arg_index]));
+         num_runs = std::max(1, atoi(argv[arg_index]));
       }
       else if (strcmp(argv[arg_index], "-verb_out") == 0){
          verbose_output = 1;
@@ -55,7 +55,7 @@ int main (int argc, char *argv[])
    omp_set_num_threads(mv.input.num_threads);
 
    CSR A;
-   Laplace_2D_5pt(&mv, &A, m);
+   Laplace_2D_5pt(mv.input, &A, m);
    int num_rows = A.n;
    int num_cols = A.m;
 
@@ -94,8 +94,14 @@ int main (int argc, char *argv[])
                y2[i] = 0;
             }
          } 
-         MatVec(&mv, A, x, y1_exact);
-         MatVecT(&mv, A, x, y1, y2);
+         MatVec_CSR(&mv, A, x, y1_exact);
+
+         if (mv.input.coo_flag == 1){
+            MatVecT_COO(&mv, A, x, y1, y2);
+         }
+         else {
+            MatVecT_CSR(&mv, A, x, y1, y2);
+         }
 
          for (int i = 0; i < num_cols; i++){
             e1[i] = y1_exact[i] - y1[i];
