@@ -12,4 +12,6 @@ double InnerProd(double *x, double *y, int n);
 
 double Residual2Norm(CSR A, double *x, double *b);
 
+void LevelSets(CSR A, LevelSetData *lvl_set);
+
 #endif

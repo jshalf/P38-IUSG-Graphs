@@ -63,6 +63,8 @@ int main (int argc, char *argv[])
    RandomMatrix(ts.input, &L, m, max_row_nnz, MATRIX_LOWER);
    RandomMatrix(ts.input, &U, m, max_row_nnz, MATRIX_UPPER);
    RandomMatrix(ts.input, &A, m, max_row_nnz, MATRIX_NONSYMMETRIC);
+   LevelSets(L, &(ts.L_lvl_set));
+   LevelSets(U, &(ts.U_lvl_set));
    int num_rows = A.n;
    int *L_perm = (int *)calloc(num_rows, sizeof(int));
    int *U_perm = (int *)calloc(num_rows, sizeof(int));
@@ -71,13 +73,13 @@ int main (int argc, char *argv[])
       U_perm[i] = num_rows - (i+1);
    }
 
-   char L_filename[100], U_filename[100], A_filename[100];
-   sprintf(L_filename, "L.txt");
-   sprintf(U_filename, "U.txt");
-   sprintf(A_filename, "A.txt");
-   PrintCOO(L, L_filename);
-   PrintCOO(U, U_filename);
-   PrintCOO(A, A_filename);
+   //char L_filename[100], U_filename[100], A_filename[100];
+   //sprintf(L_filename, "./matlab/L.txt");
+   //sprintf(U_filename, "./matlab/U.txt");
+   //sprintf(A_filename, "./matlab/A.txt");
+   //PrintCOO(L, L_filename);
+   //PrintCOO(U, U_filename);
+   //PrintCOO(A, A_filename);
 
    double *x = (double *)calloc(num_rows, sizeof(double));
    double *x_exact = (double *)calloc(num_rows, sizeof(double));
@@ -86,7 +88,6 @@ int main (int argc, char *argv[])
    double *b = (double *)calloc(num_rows, sizeof(double));
    double *e_x = (double *)calloc(num_rows, sizeof(double));
    double *e_y = (double *)calloc(num_rows, sizeof(double));
-
 
    //SuperMatrix *A_slu, B_slu, L_slu, U_slu, *AA_slu, AC_slu;
    //SuperLU_MT_Setup(A, A_slu, &B_slu, &L_slu, &U_slu, AA_slu, &AC_slu, b, ts.input.num_threads);
@@ -108,10 +109,10 @@ int main (int argc, char *argv[])
          TriSolve_CSR(&ts, L, U, L_perm, U_perm, x_exact, y_exact, b);
 
          //if (ts.input.coo_flag == 1){
-            TriSolve_FineGrained_COO(&ts, L, U, x, y, b);
+         //   TriSolve_FineGrained_COO(&ts, L, U, x, y, b);
          //}
          //else {
-         //   TriSolve_CSR(&ts, L, U, L_perm, U_perm, x, y, b);
+            TriSolve_LevelSets_CSR(&ts, L, U, x, y, b);
          //}
 
          for (int i = 0; i < num_rows; i++){

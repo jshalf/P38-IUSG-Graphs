@@ -13,6 +13,13 @@ void TriSolve_CSR(TriSolveData *ts,
                   double *y,
                   double *b);
 
+void TriSolve_LevelSets_CSR(TriSolveData *ts,
+                            CSR L,
+                            CSR U,
+                            double *x,
+                            double *y,
+                            double *b);
+
 void TriSolve_FineGrained_COO(TriSolveData *ts,
                               CSR L,
                               CSR U,

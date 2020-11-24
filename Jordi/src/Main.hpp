@@ -16,6 +16,8 @@
 #include <vector>
 #include <random>
 
+using namespace std;
+
 typedef struct{
    int solver_type;
    int num_threads;
@@ -44,8 +46,17 @@ typedef struct{
 }SolverData;
 
 typedef struct{
+   int *perm;
+   vector<int> level_size;
+   vector<int> level_start;
+   int num_levels;
+}LevelSetData;
+
+typedef struct{
    InputData input;
    OutputData output;
+   LevelSetData L_lvl_set;
+   LevelSetData U_lvl_set;
 }TriSolveData;
 
 #endif

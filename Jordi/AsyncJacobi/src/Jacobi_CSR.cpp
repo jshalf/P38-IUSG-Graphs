@@ -109,7 +109,7 @@ void Jacobi(SolverData *solver, CSR A, double *b, double **x)
 double JacobiRelax(CSR A, double *b, double **x, double *x_prev, int i)
 {
    double res = b[i];
-   for (int jj = A.i[i]; jj < A.i[i+1]; jj++){
+   for (int jj = A.i_ptr[i]; jj < A.i_ptr[i+1]; jj++){
       int ii = A.j[jj];
       res -= A.data[jj] * x_prev[ii];
    }
@@ -119,7 +119,7 @@ double JacobiRelax(CSR A, double *b, double **x, double *x_prev, int i)
 double BlockJacobiRelax(CSR A, double *b, double **x, int i)
 {
    double res = b[i];
-   for (int jj = A.i[i]; jj < A.i[i+1]; jj++){
+   for (int jj = A.i_ptr[i]; jj < A.i_ptr[i+1]; jj++){
       int ii = A.j[jj];
       res -= A.data[jj] * (*x)[ii];
    }
@@ -129,7 +129,7 @@ double BlockJacobiRelax(CSR A, double *b, double **x, int i)
 double JacobiRelaxVolatile(CSR A, double *b, volatile double **x, volatile double *x_prev, int i)
 {
    double res = b[i];
-   for (int jj = A.i[i]; jj < A.i[i+1]; jj++){
+   for (int jj = A.i_ptr[i]; jj < A.i_ptr[i+1]; jj++){
       int ii = A.j[jj];
       res -= A.data[jj] * x_prev[ii];
    }
@@ -139,7 +139,7 @@ double JacobiRelaxVolatile(CSR A, double *b, volatile double **x, volatile doubl
 double BlockJacobiRelaxVolatile(CSR A, double *b, volatile double **x, int i)
 {
    double res = b[i];
-   for (int jj = A.i[i]; jj < A.i[i+1]; jj++){
+   for (int jj = A.i_ptr[i]; jj < A.i_ptr[i+1]; jj++){
       int ii = A.j[jj];
       res -= A.data[jj] * (*x)[ii];
    }
@@ -149,7 +149,7 @@ double BlockJacobiRelaxVolatile(CSR A, double *b, volatile double **x, int i)
 double BlockJacobiRelaxAtomic(CSR A, double *b, volatile double **x, int i)
 {
    double res = b[i];
-   for (int jj = A.i[i]; jj < A.i[i+1]; jj++){
+   for (int jj = A.i_ptr[i]; jj < A.i_ptr[i+1]; jj++){
       int ii = A.j[jj];
       double xii;
       #pragma omp atomic read
