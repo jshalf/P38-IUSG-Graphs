@@ -10,9 +10,11 @@
 #include "stdlib.h"
 #include "math.h"
 #include "string.h"
-#include<iostream> 
-#include<algorithm>
+#include <iostream> 
+#include <algorithm>
 #include <omp.h>
+#include <vector>
+#include <random>
 
 typedef struct{
    int solver_type;
@@ -40,5 +42,10 @@ typedef struct{
    InputData input;
    OutputData output;
 }SolverData;
+
+typedef struct{
+   InputData input;
+   OutputData output;
+}TriSolveData;
 
 #endif

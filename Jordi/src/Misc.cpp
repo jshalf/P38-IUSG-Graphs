@@ -5,6 +5,16 @@ double RandDouble(double low, double high)
    return low + (high - low) * ((double)rand() / RAND_MAX);
 }
 
+double RandInt(int low, int high, double seed)
+{
+   //std::random_device rd;
+   //std::mt19937 gen(rd()); // seed the generator
+   //std::uniform_int_distribution<> distr(low, high); // define the range
+   //return distr(gen);
+
+   return (int)round((rand() % (high - low + 1)) + low);
+}
+
 double InnerProd(double *x, double *y, int n)
 {
    double inner_prod = 0;
