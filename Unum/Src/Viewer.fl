@@ -1,0 +1,120 @@
+# data file for the Fltk User Interface Designer (fluid)
+version 1.0304
+header_name {.h}
+code_name {.cxx}
+class PositViewer {open
+} {
+  Function {PositViewer()} {open
+  } {
+    Fl_Window mainWindow {
+      label PositViewer open
+      xywh {698 152 536 574} type Double visible
+    } {
+      Fl_Group {} {
+        label ViewerDisplay open
+        xywh {30 170 480 390} box EMBOSSED_BOX
+      } {
+        Fl_Scroll {} {open
+          xywh {40 179 465 372}
+        } {
+          Fl_Box {} {
+            label ViewBox
+            xywh {40 179 460 372}
+          }
+        }
+      }
+      Fl_Group {} {
+        label ControlWidgets open selected
+        xywh {25 21 480 124} box SHADOW_FRAME
+      } {
+        Fl_Counter {} {
+          label PositSize
+          xywh {30 32 135 35} minimum 1 maximum 32 step 1 value 6
+        }
+        Fl_Counter {} {
+          label ES
+          xywh {30 82 135 35} minimum 0 maximum 32 step 1 value 2
+        }
+        Fl_Choice {} {
+          label {X-Number} open
+          xywh {245 35 90 25} down_box BORDER_BOX
+        } {
+          MenuItem {} {
+            label Posit
+            xywh {0 0 31 20}
+          }
+          MenuItem {} {
+            label Float
+            xywh {0 0 100 20}
+          }
+          MenuItem {} {
+            label Double
+            xywh {0 0 100 20}
+          }
+          MenuItem {} {
+            label GMP
+            xywh {0 0 100 20}
+          }
+        }
+        Fl_Choice {} {
+          label {Y-Number} open
+          xywh {245 70 90 25} down_box BORDER_BOX
+        } {
+          MenuItem {} {
+            label Posit
+            xywh {10 10 31 20}
+          }
+          MenuItem {} {
+            label Float
+            xywh {10 10 100 20}
+          }
+          MenuItem {} {
+            label Double
+            xywh {10 10 100 20}
+          }
+          MenuItem {} {
+            label GMP
+            xywh {10 10 100 20}
+          }
+        }
+        Fl_Choice {} {
+          label Operator open
+          xywh {245 105 90 25} down_box BORDER_BOX
+        } {
+          MenuItem {} {
+            label {+}
+            xywh {0 0 100 20}
+          }
+          MenuItem {} {
+            label {-}
+            xywh {0 0 100 20}
+          }
+          MenuItem {} {
+            label {*}
+            xywh {0 0 100 20}
+          }
+          MenuItem {} {
+            label {/}
+            xywh {0 0 100 20}
+          }
+        }
+        Fl_Value_Input {} {
+          label Min
+          xywh {375 36 130 29} minimum -1e+18 maximum 1e+18 value -100
+        }
+        Fl_Value_Input {} {
+          label Max
+          xywh {375 71 130 29} minimum -1e+18 maximum 1e+18 value 100
+        }
+        Fl_Value_Input {} {
+          label Step
+          xywh {375 106 130 29} minimum -1e+18 maximum 1e+18 value 100
+        }
+      }
+    }
+  }
+  Function {show()} {open
+  } {
+    code {mainWindow->show();} {}
+  }
+}

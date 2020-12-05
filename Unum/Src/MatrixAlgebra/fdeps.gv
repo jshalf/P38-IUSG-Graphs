@@ -1,0 +1,43 @@
+Digraph ForwardDeps {
+	size="7.5,10";
+ 	ratio = compress;
+		 node[style=filled, colorscheme=pastel13, color=2];
+	row0 -> row12;
+		 node[style=filled, colorscheme=pastel13, color=3];
+	row0 -> row18;
+		 node[style=filled, colorscheme=pastel13, color=2];
+	row1 -> row13;
+		 node[style=filled, colorscheme=pastel13, color=2];
+	row2 -> row20;
+		 node[style=filled, colorscheme=pastel13, color=2];
+	row3 -> row15;
+		 node[style=filled, colorscheme=pastel13, color=2];
+	row4 -> row14;
+		 node[style=filled, colorscheme=pastel13, color=2];
+	row5 -> row13;
+		 node[style=filled, colorscheme=pastel13, color=2];
+	row6 -> row11;
+		 node[style=filled, colorscheme=pastel13, color=3];
+	row6 -> row21;
+		 node[style=filled, colorscheme=pastel13, color=2];
+	row7 -> row9;
+		 node[style=filled, colorscheme=pastel13, color=2];
+	row7 -> row16;
+		 node[style=filled, colorscheme=pastel13, color=3];
+	row9 -> row17;
+		 node[style=filled, colorscheme=pastel13, color=3];
+	row10 -> row18;
+		 node[style=filled, colorscheme=pastel13, color=3];
+	row10 -> row21;
+		 node[style=filled, colorscheme=pastel13, color=3];
+	row11 -> row21;
+		 node[style=filled, colorscheme=pastel13, color=3];
+	row12 -> row23;
+		 node[style=filled, colorscheme=pastel13, color=3];
+	row15 -> row18;
+		 node[style=filled, colorscheme=pastel13, color=3];
+	row19 -> row21;
+		 node[style=filled, colorscheme=pastel13, color=3];
+	row20 -> row22;
+}
+
