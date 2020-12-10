@@ -70,9 +70,9 @@ void MatVecT_COO(MatVecData *mv,
          else if (mv->input.atomic_flag == 1){
             #pragma omp for
             for (int k = 0; k < nnz; k++){
-               #pragma atomic
+               #pragma omp atomic
                y1[A.j[k]] += A.data[k] * x[A.i[k]];
-               #pragma atomic
+               #pragma omp atomic
                y2[A.i[k]] += A.data[k] * x[A.j[k]];
             }
          }
@@ -104,7 +104,7 @@ void MatVecT_COO(MatVecData *mv,
          else if (mv->input.atomic_flag == 1){
             #pragma omp for
             for (int k = 0; k < nnz; k++){
-               #pragma atomic
+               #pragma omp atomic
                y1[A.j[k]] += A.data[k] * x[A.i[k]];
             }
          }

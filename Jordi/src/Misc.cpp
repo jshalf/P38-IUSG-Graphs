@@ -28,6 +28,26 @@ double InnerProd(double *x, double *y, int n)
    return inner_prod;
 }
 
+int SumInt(int *x, int n)
+{
+   int sum = 0;
+   for (int i = 0; i < n; i++){
+      sum += x[i];
+   }
+
+   return sum;
+}
+
+double SumDouble(double *x, int n)
+{
+   double sum = 0;
+   for (int i = 0; i < n; i++){
+      sum += x[i];
+   }
+
+   return sum;
+}
+
 double Residual2Norm(CSR A, double *x, double *b)
 {
    int n = A.n;

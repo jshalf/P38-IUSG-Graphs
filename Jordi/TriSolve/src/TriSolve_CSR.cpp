@@ -12,11 +12,6 @@ void TriSolve_CSR(TriSolveData *ts,
 {
    int num_rows = L.n;
 
-   for (int i = 0; i < num_rows; i++){
-      x[i] = 0;
-      y[i] = 0;
-   }
-
    for (int ii = 0; ii < num_rows; ii++){
       int i = L_perm[ii];
       x[i] = b[i] / L.diag[i];
@@ -45,12 +40,6 @@ void TriSolve_LevelSets_CSR(TriSolveData *ts,
 
    #pragma omp parallel
    {
-      #pragma omp for schedule(static, lump)
-      for (int i = 0; i < num_rows; i++){
-         x[i] = 0;
-         y[i] = 0;
-      }
-   
       for (int l = 0; l < ts->L_lvl_set.num_levels; l++){
          #pragma omp for schedule(static, lump)
          for (int ii = ts->L_lvl_set.level_start[l]; ii < ts->L_lvl_set.level_start[l+1]; ii++){

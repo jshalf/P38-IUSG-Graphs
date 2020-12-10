@@ -8,7 +8,7 @@ int main (int argc, char *argv[])
    MatVecData mv;
    mv.input.num_threads = 1;
    mv.input.num_iters = 1;
-   mv.input.atomic_flag = 0;
+   mv.input.atomic_flag = 1;
    mv.input.AAT_flag = 0;
    mv.input.expand_flag = 0;
    mv.input.coo_flag = 0;
@@ -30,8 +30,8 @@ int main (int argc, char *argv[])
          arg_index++;
          mv.input.num_threads = atoi(argv[arg_index]);
       }
-      else if (strcmp(argv[arg_index], "-atomic") == 0){
-         mv.input.atomic_flag = 1;
+      else if (strcmp(argv[arg_index], "-no_atomic") == 0){
+         mv.input.atomic_flag = 0;
       }
       else if (strcmp(argv[arg_index], "-num_runs") == 0){
          arg_index++;

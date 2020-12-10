@@ -6,10 +6,13 @@
 #define SYNC_BLOCK_JACOBI  2
 #define ASYNC_BLOCK_JACOBI 3
 
-#include "stdio.h"
-#include "stdlib.h"
-#include "math.h"
-#include "string.h"
+#define TRISOLVE_ASYNC 0
+#define TRISOLVE_LEVEL_SCHEDULED 1
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <math.h>
+#include <string.h>
 #include <iostream> 
 #include <algorithm>
 #include <omp.h>
@@ -27,10 +30,16 @@ typedef struct{
    int AAT_flag;
    int expand_flag;
    int coo_flag;
+   int omp_for_flag;
 }InputData;
 
 typedef struct{
    double solve_wtime;
+   double setup_wtime;
+   double solve_wtime_thread;
+   double *atomic_wtime_vec;
+   double *solve_wtime_vec;
+   int *num_relax;
 }OutputData;
 
 typedef struct{

@@ -5,6 +5,9 @@
 #define MATRIX_LOWER 1
 #define MATRIX_UPPER 2
 
+#define PROBLEM_RANDOM 0
+#define PROBLEM_5PT_POISSON 1
+
 #include "Main.hpp"
 
 typedef struct{

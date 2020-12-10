@@ -63,9 +63,9 @@ void MatVecT_CSR(MatVecData *mv,
             #pragma omp for
             for (int i = 0; i < num_rows; i++){
                for (int jj = A.i_ptr[i]; jj < A.i_ptr[i+1]; jj++){
-                  #pragma atomic
+                  #pragma omp atomic
                   y1[A.j[jj]] += A.data[jj] * x[i];
-                  #pragma atomic
+                  #pragma omp atomic
                   y2[i] += A.data[jj] * x[A.j[jj]];
                }
             }
@@ -103,7 +103,7 @@ void MatVecT_CSR(MatVecData *mv,
             #pragma omp for
             for (int i = 0; i < num_rows; i++){
                for (int jj = A.i_ptr[i]; jj < A.i_ptr[i+1]; jj++){
-                  #pragma atomic
+                  #pragma omp atomic
                   y1[A.j[jj]] += A.data[jj] * x[i];
                }
             }

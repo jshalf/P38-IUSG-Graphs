@@ -18,7 +18,7 @@ all: clean Main
 SUPERLU_DIR = ../SuperLU_MT_3.1
 
 Main: $(TRISOLVE_SRCDIR)/Main.cpp
-	$(COMPILE) $(CPPFILES) $(INCLUDE) -o Main $(LIBS)
+	$(COMPILE) $(CPPFILES) $(INCLUDE) -D USE_SUPERLU -o Main $(LIBS)
 
 clean:
 	rm -f Main

@@ -57,7 +57,7 @@ void Laplace_2D_5pt(InputData input, CSR *A, int n)
       }
    }
 
-   if (input.coo_flag == 1){
+   //if (input.coo_flag == 1){
       A->i = (int *)calloc(A->nnz, sizeof(int));
       k = 0;
       for (int i = 0; i < A->n; i++){
@@ -66,12 +66,14 @@ void Laplace_2D_5pt(InputData input, CSR *A, int n)
             k++;
          }
       }
-   }
+   //}
 }
 
 void RandomMatrix(InputData input, CSR *A, int n, int max_row_nnz, int mat_type)
 {
    A->diag = (double *)calloc(n, sizeof(double));
+   double low = -1.0/(double)(max_row_nnz);
+   double high = 1.0/(double)(max_row_nnz);
 
    srand(0);
    if (mat_type == MATRIX_LOWER || 
@@ -93,7 +95,7 @@ void RandomMatrix(InputData input, CSR *A, int n, int max_row_nnz, int mat_type)
          }
          int row_nnz = (int)RandDouble(1, i_max_row_nnz);
          int count = 1;
-         A->diag[i] = RandDouble(-1.0, 1.0);
+         A->diag[i] = RandDouble(0.0, 1.0);
          //rows[i].push_back(i);
          //nzval[i].push_back(RandDouble(-1.0, 1.0));
          //nnz++;
@@ -113,7 +115,7 @@ void RandomMatrix(InputData input, CSR *A, int n, int max_row_nnz, int mat_type)
             it = find(rows[i].begin(), rows[i].end(), col);
             if (it == rows[i].end() && i != col){
                rows[i].push_back(col);
-               nzval[i].push_back(RandDouble(-1.0, 1.0));
+               nzval[i].push_back(RandDouble(0.0, high));
                count++;
                nnz++;
             }
