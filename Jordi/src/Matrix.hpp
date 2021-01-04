@@ -7,6 +7,7 @@
 
 #define PROBLEM_RANDOM 0
 #define PROBLEM_5PT_POISSON 1
+#define PROBLEM_FILE 2
 
 #include "Main.hpp"
 
@@ -25,6 +26,8 @@ void Laplace_2D_5pt(InputData input, CSR *A, int n);
 
 void RandomMatrix(InputData input, CSR *A, int n, int max_row_nnz, int mat_type);
 
-void PrintCOO(CSR A, char *filename);
+void PrintCOO(CSR A, char *filename, int print_diag_flag);
+
+void freadBinaryMatrix(char *mat_file_str, CSR *A, int include_diag_flag);
 
 #endif

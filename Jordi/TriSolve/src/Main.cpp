@@ -30,6 +30,7 @@ int main (int argc, char *argv[])
    int solver_type = TRISOLVE_ASYNC;
    int problem_type;
    double start;
+   char mat_file_str[128];
 
    int arg_index = 0;
    while (arg_index < argc){
@@ -85,6 +86,11 @@ int main (int argc, char *argv[])
          else if (strcmp(argv[arg_index], "rand") == 0){
             problem_type = PROBLEM_RANDOM;
          }
+         else if (strcmp(argv[arg_index], "file") == 0){
+            arg_index++;
+            problem_type = PROBLEM_FILE;
+            strcpy(mat_file_str, argv[arg_index]);
+         }
       }
       arg_index++;
    }
@@ -109,10 +115,26 @@ int main (int argc, char *argv[])
    //char A_filename[100];
    //sprintf(A_filename, "./matlab/A.txt");
    //PrintCOO(A, A_filename);
-  
-   RandomMatrix(ts.input, &L, m, max_row_nnz, MATRIX_LOWER);
-   RandomMatrix(ts.input, &U, m, max_row_nnz, MATRIX_UPPER);
-   //RandomMatrix(ts.input, &A, m, max_row_nnz, MATRIX_NONSYMMETRIC);
+   if (problem_type == PROBLEM_FILE){
+      char L_mat_file_str[128];
+      char U_mat_file_str[128];
+      sprintf(L_mat_file_str, "%s_L.txt.bin", mat_file_str);
+      sprintf(U_mat_file_str, "%s_U.txt.bin", mat_file_str);
+      freadBinaryMatrix(L_mat_file_str, &L, 0);
+      freadBinaryMatrix(U_mat_file_str, &U, 0);
+
+      //char L_outfile[128];
+      //char U_outfile[128];
+      //sprintf(L_outfile, "./matlab/L.txt");
+      //sprintf(U_outfile, "./matlab/U.txt");
+      //PrintCOO(L, L_outfile, 0);
+      //PrintCOO(U, U_outfile, 0);
+   }
+   else { 
+      RandomMatrix(ts.input, &L, m, max_row_nnz, MATRIX_LOWER);
+      RandomMatrix(ts.input, &U, m, max_row_nnz, MATRIX_UPPER);
+   }
+   
    ts.output.setup_wtime = 0.0;
    if (solver_type == TRISOLVE_LEVEL_SCHEDULED){
       start = omp_get_wtime();
@@ -184,12 +206,12 @@ int main (int argc, char *argv[])
          e_x[i] = x_exact[i] - x[i];
          e_y[i] = y_exact[i] - y[i];
       }
-      double error_x = sqrt(InnerProd(e_x, e_x, num_rows));
-      double error_y = sqrt(InnerProd(e_y, e_y, num_rows));
+      double error_x = sqrt(InnerProd(e_x, e_x, num_rows))/sqrt(InnerProd(x_exact, x_exact, num_rows));
+      double error_y = sqrt(InnerProd(e_y, e_y, num_rows))/sqrt(InnerProd(y_exact, y_exact, num_rows));
       double atomic_wtime_sum = SumDouble(ts.output.atomic_wtime_vec, ts.input.num_threads);
       int num_relax_sum = SumInt(ts.output.num_relax, ts.input.num_threads);
       if (verbose_output){
-         printf("Solve wall-clock time = %e\nSetup wall-clock time = %e\nAtomics wall-clock time = %e\nL solve error L2-norm = %e\nU solve error L2-norm = %e\nmean relaxations = %f\n",
+         printf("Solve wall-clock time = %e\nSetup wall-clock time = %e\nAtomics wall-clock time = %e\nL solve forward-error L2-norm = %e\nU solve forward-error L2-norm = %e\nmean relaxations = %f\n",
                  ts.output.solve_wtime, ts.output.setup_wtime, atomic_wtime_sum/(double)ts.input.num_threads, error_x, error_y, (double)num_relax_sum/(double)ts.input.num_threads);
       }
       else {

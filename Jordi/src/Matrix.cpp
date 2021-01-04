@@ -143,14 +143,83 @@ void RandomMatrix(InputData input, CSR *A, int n, int max_row_nnz, int mat_type)
    }
 }
 
-void PrintCOO(CSR A, char *filename)
+void PrintCOO(CSR A, char *filename, int print_diag_flag)
 {
    FILE *file = fopen(filename, "w");
-   for (int i = 0; i < A.n; i++){
-      fprintf(file, "%d %d %.15e\n", i+1, i+1, A.diag[i]);
+   
+   if (print_diag_flag == 1){
+      for (int i = 0; i < A.n; i++){
+         fprintf(file, "%d %d %.15e\n", i+1, i+1, A.diag[i]);
+      }
    }
    for (int k = 0; k < A.nnz; k++){
       fprintf(file, "%d %d %.15e\n", A.i[k]+1, A.j[k]+1, A.data[k]);
    }
    fclose(file);
+}
+
+void freadBinaryMatrix(char *mat_file_str, CSR *A, int include_diag_flag)
+{
+   size_t size;
+   int temp_size;
+   Triplet_AOS *buffer;
+
+   FILE *mat_file = fopen(mat_file_str, "rb");
+
+   fseek(mat_file, 0, SEEK_END);
+   size = ftell(mat_file);
+   rewind(mat_file);
+   buffer = (Triplet_AOS *)malloc(sizeof(Triplet_AOS) * size);
+   fread(buffer, sizeof(Triplet_AOS), size, mat_file);
+
+   int file_lines = size/sizeof(Triplet_AOS);
+   int num_rows = (int)buffer[0].i;
+   int nnz = (int)buffer[0].j;
+
+   A->n = num_rows;
+   A->nnz = nnz;
+   if (include_diag_flag == 0){
+      A->nnz -= A->n;
+   }
+
+   vector<int> row_counts(A->n, 0);
+
+   A->i = (int *)calloc(A->nnz, sizeof(int));
+   A->j = (int *)calloc(A->nnz, sizeof(int));
+   A->data = (double *)calloc(A->nnz, sizeof(double));
+   A->i_ptr = (int *)calloc(A->n+1, sizeof(int));
+   A->diag = (double *)calloc(A->n, sizeof(double));
+
+   vector<int> row_nnz(A->n, 0);
+
+   int kk = 0;
+   int kk_diag = 0;
+   for (int k = 1; k < file_lines; k++){
+      int row = buffer[k].i-1;
+      int col = buffer[k].j-1;
+      double elem = buffer[k].val;
+      
+      int include_row_flag = 1;
+      if (row == col){
+         A->diag[kk_diag] = elem;
+         kk_diag++;
+         if (include_diag_flag == 0){
+            include_row_flag = 0;
+         }
+      }
+      
+      if (include_row_flag == 1) {   
+         A->i[kk] = row;
+         A->j[kk] = col;
+         A->data[kk] = elem;
+         row_nnz[row]++;
+         kk++;
+      }
+   }
+
+   for (int i = 0; i < A->n; i++){
+      A->i_ptr[i+1] = A->i_ptr[i] + row_nnz[i];
+   }
+
+   fclose(mat_file);
 }

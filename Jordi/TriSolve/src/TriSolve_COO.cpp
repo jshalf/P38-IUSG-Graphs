@@ -115,13 +115,15 @@ void TriSolve_FineGrained_COO(TriSolveData *ts,
          U_loc.diag[kk] = U.diag[U.i[k]];
          kk++;
       }
+
+      //printf("%d %d\n", tid, all_count);
   
       solve_start = omp_get_wtime();
       while (1){ 
          if (ts->input.atomic_flag == 1){
             if (ts->input.omp_for_flag == 1){ // TODO: fix bug in this if-statement that causes deadlock
                if (L_count > 0){
-                  #pragma omp for nowait schedule(static, lump)
+                  #pragma omp for schedule(TRISOLVE_OMPFOR_SCHED, lump) nowait
                   for (int k = 0; k < L_nnz; k++){
                      if (L_done_flags[k] == 0){
                         int j = L.j[k];
@@ -148,7 +150,7 @@ void TriSolve_FineGrained_COO(TriSolveData *ts,
                   }
                }
                if (U_init_count > 0){
-                  #pragma omp for nowait schedule(static, lump)
+                  #pragma omp for schedule(TRISOLVE_OMPFOR_SCHED, lump) nowait
                   for (int i = 0; i < U_n; i++){
                      int L_row_counts_i;
                      #pragma omp atomic read
@@ -168,7 +170,7 @@ void TriSolve_FineGrained_COO(TriSolveData *ts,
                   }
                }
                if (U_count > 0){
-                  #pragma omp for nowait schedule(static, lump)
+                  #pragma omp for schedule(TRISOLVE_OMPFOR_SCHED, lump) nowait
                   for (int k = 0; k < U_nnz; k++){
                      if (U_done_flags[k] == 0){
                         int j = U.j[k];
@@ -222,7 +224,7 @@ void TriSolve_FineGrained_COO(TriSolveData *ts,
                }
                if (U_init_count > 0){
                   ii = 0;
-                  #pragma omp for nowait schedule(static, lump)
+                  #pragma omp for schedule(static, lump) nowait
                   for (int i = 0; i < U_n; i++){
                      int L_row_counts_i;
                      #pragma omp atomic read
@@ -270,77 +272,157 @@ void TriSolve_FineGrained_COO(TriSolveData *ts,
             }
          } /* atomic */
          else {
-            if (L_count > 0){
-               #pragma omp for nowait schedule(static, lump)
-               for (int k = 0; k < L_nnz; k++){
-                  if (L_done_flags[k] == 0){
-                     int i = L.i[k];
-                     int j = L.j[k];
-                     double Lij = L.data[k];
-                     double Lii = L.diag[i];
-                     if (L_row_counts[j] == 0){
+            if (ts->input.omp_for_flag == 1){
+               if (L_count > 0){
+                  #pragma omp for schedule(TRISOLVE_OMPFOR_SCHED, lump) nowait
+                  for (int k = 0; k < L_nnz; k++){
+                     if (L_done_flags[k] == 0){
+                        int j = L.j[k];
+                        int L_row_counts_j;
+                        #pragma omp atomic read
+                        L_row_counts_j = L_row_counts[j];
+                        if (L_row_counts_j == 0){
+                           int i = L.i[k];
+                           double Lij = L.data[k];
+                           double Lii = L.diag[i];
+                           //start = omp_get_wtime();
+                           x[i] -= x[j] * (Lij / Lii);
+                           #pragma omp atomic
+                           L_row_counts[i]--;
+                           //ts->output.atomic_wtime[tid] += omp_get_wtime() - start;
 
-                        //start = omp_get_wtime();
-                        x[i] -= x[j] * (Lij / Lii);
-                        #pragma omp atomic
-                        L_row_counts[i]--;
-                        //ts->output.atomic_wtime[tid] += omp_get_wtime() - start;
+                           //dummy_x[i] -= dummy_x[j] * (Lij / Lii);
+                           //dummy_L_row_counts[i]--;
 
-                        //dummy_x[i] -= dummy_x[j] * (Lij / Lii);
-                        //dummy_L_row_counts[i]--;
+                           L_count--;
+                           all_count--;
 
-                        L_count--;
-                        all_count--;
-
-                        L_done_flags[k] = 1;
+                           L_done_flags[k] = 1;
+                        }
                      }
                   }
                }
-            }
-            if (U_init_count > 0){
-               #pragma omp for nowait schedule(static, lump)
-               for (int i = 0; i < U_n; i++){
-                  if (U_init_flags[i] == 0 && L_row_counts[i] == 0){
-                     double Uii = U.diag[i];
-
-                     //start = omp_get_wtime();
-                     y[i] += x[i] / Uii;
-                     #pragma omp atomic
-                     U_row_counts[i]--;
-                     //ts->output.atomic_wtime[tid] += omp_get_wtime() - start;
-
-                     //dummy_y[i] += dummy_x[i] / Uii;
-                     //dummy_U_row_counts[i]--;
-
-                     U_init_flags[i] = 1;
-                     U_init_count--;
-                     all_count--;
-                  }
-               }
-            }
-            if (U_count > 0){
-               #pragma omp for nowait schedule(static, lump)
-               for (int k = 0; k < U_nnz; k++){
-                  if (U_done_flags[k] == 0){
-                     int i = U.i[k];
-                     int j = U.j[k];
-                     double Uij = U.data[k];
-                     double Uii = U.diag[i];
-                     if (U_row_counts[j] == 0){
+               if (U_init_count > 0){
+                  #pragma omp for schedule(TRISOLVE_OMPFOR_SCHED, lump) nowait
+                  for (int i = 0; i < U_n; i++){
+                     int L_row_counts_i;
+                     #pragma omp atomic read
+                     L_row_counts_i = L_row_counts[i];
+                     if (U_init_flags[i] == 0 && L_row_counts_i == 0){
+                        double Uii = U.diag[i];
 
                         //start = omp_get_wtime();
-                        y[i] -= y[j] * (Uij / Uii);
+                        y[i] += x[i] / Uii;
                         #pragma omp atomic
                         U_row_counts[i]--;
                         //ts->output.atomic_wtime[tid] += omp_get_wtime() - start;
 
-                        //dummy_y[i] -= dummy_y[j] * (Uij / Uii);
+                        //dummy_y[i] += dummy_x[i] / Uii;
                         //dummy_U_row_counts[i]--;
 
-                        U_count--;
+                        U_init_flags[i] = 1;
+                        U_init_count--;
                         all_count--;
+                     }
+                  }
+               }
+               if (U_count > 0){
+                  #pragma omp for schedule(TRISOLVE_OMPFOR_SCHED, lump) nowait
+                  for (int k = 0; k < U_nnz; k++){
+                     if (U_done_flags[k] == 0){
+                        int j = U.j[k];
+                        int U_row_counts_j;
+                        #pragma omp atomic read 
+                        U_row_counts_j = U_row_counts[j];
+                        if (U_row_counts_j == 0){
+                           int i = U.i[k];
+                           double Uij = U.data[k];
+                           double Uii = U.diag[i];
+                           //start = omp_get_wtime();
+                           y[i] -= y[j] * (Uij / Uii);
+                           #pragma omp atomic
+                           U_row_counts[i]--;
+                           //ts->output.atomic_wtime[tid] += omp_get_wtime() - start;
 
-                        U_done_flags[k] = 1;
+                           //dummy_y[i] -= dummy_y[j] * (Uij / Uii);
+                           //dummy_U_row_counts[i]--;
+
+                           U_count--;
+                           all_count--;
+
+                           U_done_flags[k] = 1;
+                        }
+                     }
+                  }
+               }
+            } /* omp for */
+            else {
+               if (L_count > 0){
+                  for (int k = 0; k < L_nnz_loc; k++){
+                     if (L_done_flags_loc[k] == 0){
+                        int j = L_loc.j[k];
+                        int L_row_counts_j;
+                        #pragma omp atomic read
+                        L_row_counts_j = L_row_counts[j];
+                        if (L_row_counts_j == 0){
+                           int i = L_loc.i[k];
+                           double Lij = L_loc.data[k];
+                           double Lii = L_loc.diag[k];
+
+                           x[i] -= x[j] * (Lij / Lii);
+                           #pragma omp atomic
+                           L_row_counts[i]--;
+
+                           L_count--;
+                           all_count--;
+
+                           L_done_flags_loc[k] = 1;
+                        }
+                     }
+                  }
+               }
+               if (U_init_count > 0){
+                  ii = 0;
+                  #pragma omp for schedule(static, lump) nowait
+                  for (int i = 0; i < U_n; i++){
+                     int L_row_counts_i;
+                     #pragma omp atomic read
+                     L_row_counts_i = L_row_counts[i];
+                     if (U_init_flags_loc[ii] == 0 && L_row_counts_i == 0){
+                        double Uii = U_diag_loc[ii];
+
+                        y[i] += x[i] / Uii;
+                        #pragma omp atomic
+                        U_row_counts[i]--;
+
+                        U_init_flags_loc[ii] = 1;
+                        U_init_count--;
+                        all_count--;
+                     }
+                     ii++;
+                  }
+               }
+               if (U_count > 0){
+                  for (int k = 0; k < U_nnz_loc; k++){
+                     if (U_done_flags_loc[k] == 0){
+                        int j = U_loc.j[k];
+                        int U_row_counts_j;
+                        #pragma omp atomic read
+                        U_row_counts_j = U_row_counts[j];
+                        if (U_row_counts_j == 0){
+                           int i = U_loc.i[k];
+                           double Uij = U_loc.data[k];
+                           double Uii = U_loc.diag[k];
+
+                           y[i] -= y[j] * (Uij / Uii);
+                           #pragma omp atomic
+                           U_row_counts[i]--;
+
+                           U_count--;
+                           all_count--;
+
+                           U_done_flags_loc[k] = 1;
+                        }
                      }
                   }
                }

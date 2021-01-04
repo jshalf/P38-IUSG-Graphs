@@ -40,6 +40,7 @@ typedef struct{
    double *atomic_wtime_vec;
    double *solve_wtime_vec;
    int *num_relax;
+   int **relax_hist;
 }OutputData;
 
 typedef struct{
@@ -67,5 +68,11 @@ typedef struct{
    LevelSetData L_lvl_set;
    LevelSetData U_lvl_set;
 }TriSolveData;
+
+typedef struct{
+   int i;
+   int j;
+   double val;
+}Triplet_AOS;
 
 #endif

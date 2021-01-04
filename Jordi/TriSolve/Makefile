@@ -8,7 +8,7 @@ CPPFILES = \
         $(TRISOLVE_SRCDIR)/TriSolve_CSR.cpp \
 	$(TRISOLVE_SRCDIR)/Main.cpp \
 
-COMPILE = g++ -fopenmp -lm -O0 -std=c++11 -g
+COMPILE = g++ -fopenmp -lm -O3 -std=c++11 -g
 
 LIBS = $(SUPERLU_DIR)/lib/libsuperlu_mt_OPENMP.a $(SUPERLU_DIR)/lib/libblas_OPENMP.a
 INCLUDE = -I$(SUPERLU_DIR)/SRC/

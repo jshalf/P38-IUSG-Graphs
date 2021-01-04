@@ -4,6 +4,8 @@
 #include "../../src/Main.hpp"
 #include "../../src/Matrix.hpp"
 
+#define TRISOLVE_OMPFOR_SCHED static
+
 void TriSolve_CSR(TriSolveData *ts,
                   CSR L,
                   CSR U,
