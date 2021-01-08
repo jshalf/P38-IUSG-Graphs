@@ -121,7 +121,7 @@ void TriSolve_FineGrained_COO(TriSolveData *ts,
       solve_start = omp_get_wtime();
       while (1){ 
          if (ts->input.atomic_flag == 1){
-            if (ts->input.omp_for_flag == 1){ // TODO: fix bug in this if-statement that causes deadlock
+            if (ts->input.omp_for_flag == 1){ // TODO: fix deadlock when using OpenMP schedule this is not static
                if (L_count > 0){
                   #pragma omp for schedule(TRISOLVE_OMPFOR_SCHED, lump) nowait
                   for (int k = 0; k < L_nnz; k++){
