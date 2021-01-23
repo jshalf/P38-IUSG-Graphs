@@ -9,6 +9,9 @@
 #define TRISOLVE_ASYNC 0
 #define TRISOLVE_LEVEL_SCHEDULED 1
 
+#define ILU_ASYNC 0
+#define ILU_LEVEL_SCHEDULED 1
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
@@ -18,8 +21,15 @@
 #include <omp.h>
 #include <vector>
 #include <random>
+#include <queue>
 
 using namespace std;
+
+typedef struct{
+   int i;
+   int j;
+   double val;
+}Triplet_AOS;
 
 typedef struct{
    int solver_type;
@@ -31,6 +41,7 @@ typedef struct{
    int expand_flag;
    int coo_flag;
    int omp_for_flag;
+   int msgQ_flag;
 }InputData;
 
 typedef struct{
@@ -70,9 +81,10 @@ typedef struct{
 }TriSolveData;
 
 typedef struct{
-   int i;
-   int j;
-   double val;
-}Triplet_AOS;
+   InputData input;
+   OutputData output;
+   LevelSetData L_lvl_set;
+   LevelSetData U_lvl_set;
+}ILUData;
 
 #endif

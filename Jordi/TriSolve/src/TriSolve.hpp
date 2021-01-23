@@ -1,5 +1,5 @@
-#ifndef JACOBI_HPP
-#define JACOBI_HPP
+#ifndef TRISOLVE_HPP
+#define TRISOLVE_HPP
 
 #include "../../src/Main.hpp"
 #include "../../src/Matrix.hpp"

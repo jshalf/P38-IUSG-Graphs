@@ -23,6 +23,7 @@ int main (int argc, char *argv[])
    ts.input.coo_flag = 0;
    ts.input.async_flag = 1;
    ts.input.omp_for_flag = 0;
+   ts.input.msgQ_flag = 0;
    int verbose_output = 0;
    int num_runs = 1;
    int m = 10; 
@@ -56,9 +57,6 @@ int main (int argc, char *argv[])
       else if (strcmp(argv[arg_index], "-verb_out") == 0){
          verbose_output = 1;
       }
-      else if (strcmp(argv[arg_index], "-coo") == 0){
-         ts.input.coo_flag = 1;
-      }
       else if (strcmp(argv[arg_index], "-solver") == 0){
          arg_index++;
          if (strcmp(argv[arg_index], "async") == 0){
@@ -91,6 +89,9 @@ int main (int argc, char *argv[])
             problem_type = PROBLEM_FILE;
             strcpy(mat_file_str, argv[arg_index]);
          }
+      }
+      else if (strcmp(argv[arg_index], "-MsgQ") == 0){
+         ts.input.msgQ_flag = 1;
       }
       arg_index++;
    }
@@ -204,6 +205,7 @@ int main (int argc, char *argv[])
 
       for (int i = 0; i < num_rows; i++){
          e_x[i] = x_exact[i] - x[i];
+         //printf("%e %e\n", x_exact[i], x[i]);
          e_y[i] = y_exact[i] - y[i];
       }
       double error_x = sqrt(InnerProd(e_x, e_x, num_rows))/sqrt(InnerProd(x_exact, x_exact, num_rows));
