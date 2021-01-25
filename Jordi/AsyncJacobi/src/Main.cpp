@@ -15,6 +15,8 @@ int main (int argc, char *argv[])
    int num_runs = 1;
    int m = 10; 
    double w = 1.0;
+   int problem_type = PROBLEM_5PT_POISSON;
+   char mat_file_str[128];
 
    int arg_index = 0;
    while (arg_index < argc){
@@ -60,13 +62,35 @@ int main (int argc, char *argv[])
       else if (strcmp(argv[arg_index], "-MsgQ") == 0){
          solver.input.MsgQ_flag = 1;
       }
+      else if (strcmp(argv[arg_index], "-problem") == 0){
+         arg_index++;
+         if (strcmp(argv[arg_index], "5pt") == 0){
+            problem_type = PROBLEM_5PT_POISSON;
+         }
+         else if (strcmp(argv[arg_index], "file") == 0){
+            arg_index++;
+            problem_type = PROBLEM_FILE;
+            strcpy(mat_file_str, argv[arg_index]);
+         }
+      }
       arg_index++;
    }
    
    omp_set_num_threads(solver.input.num_threads);
 
    CSR A;
-   Laplace_2D_5pt(solver.input, &A, m);
+   if (problem_type == PROBLEM_FILE){
+      char A_mat_file_str[128];
+      sprintf(A_mat_file_str, "%s_A.txt.bin", mat_file_str);
+      freadBinaryMatrix(A_mat_file_str, &A, 1);
+
+      //char A_outfile[128];
+      //sprintf(A_outfile, "./matlab/A.txt");
+      //PrintCOO(A, A_outfile, 0);
+   }
+   else {
+      Laplace_2D_5pt(solver.input, &A, m);
+   }
    int n = A.n;
    double *x = (double *)calloc(n, sizeof(double));
    double *b = (double *)calloc(n, sizeof(double));

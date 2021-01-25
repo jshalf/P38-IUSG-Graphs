@@ -29,7 +29,7 @@ int main (int argc, char *argv[])
    int m = 10; 
    int max_row_nnz = 3;
    int solver_type = TRISOLVE_ASYNC;
-   int problem_type;
+   int problem_type = PROBLEM_5PT_POISSON;
    double start;
    char mat_file_str[128];
 

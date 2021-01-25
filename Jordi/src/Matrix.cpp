@@ -177,6 +177,7 @@ void freadBinaryMatrix(char *mat_file_str, CSR *A, int include_diag_flag)
    int nnz = (int)buffer[0].j;
 
    A->n = num_rows;
+   A->m = A->n;
    A->nnz = nnz;
    if (include_diag_flag == 0){
       A->nnz -= A->n;

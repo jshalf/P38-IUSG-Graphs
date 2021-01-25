@@ -16,6 +16,8 @@ int main (int argc, char *argv[])
    int verbose_output = 0;
    int num_runs = 1;
    int m = 10; 
+   int problem_type = PROBLEM_5PT_POISSON;
+   char mat_file_str[128];
 
    int arg_index = 0;
    while (arg_index < argc){
@@ -53,13 +55,35 @@ int main (int argc, char *argv[])
       else if (strcmp(argv[arg_index], "-MsgQ") == 0){
          mv.input.MsgQ_flag = 1;
       }
+      else if (strcmp(argv[arg_index], "-problem") == 0){
+         arg_index++;
+         if (strcmp(argv[arg_index], "5pt") == 0){
+            problem_type = PROBLEM_5PT_POISSON;
+         }
+         else if (strcmp(argv[arg_index], "file") == 0){
+            arg_index++;
+            problem_type = PROBLEM_FILE;
+            strcpy(mat_file_str, argv[arg_index]);
+         }
+      }
       arg_index++;
    }
    
    omp_set_num_threads(mv.input.num_threads);
 
    CSR A;
-   Laplace_2D_5pt(mv.input, &A, m);
+   if (problem_type == PROBLEM_FILE){
+      char A_mat_file_str[128];
+      sprintf(A_mat_file_str, "%s_A.txt.bin", mat_file_str);
+      freadBinaryMatrix(A_mat_file_str, &A, 1);
+
+      //char A_outfile[128];
+      //sprintf(A_outfile, "./matlab/A.txt");
+      //PrintCOO(A, A_outfile, 0);
+   }
+   else {
+      Laplace_2D_5pt(mv.input, &A, m);
+   }
    int num_rows = A.n;
    int num_cols = A.m;
 
@@ -117,9 +141,9 @@ int main (int argc, char *argv[])
          }
       }
       mv.output.solve_wtime = omp_get_wtime() - start;
-      double error1 = sqrt(InnerProd(e1, e1, num_cols));
+      double error1 = sqrt(InnerProd(e1, e1, num_cols))/sqrt(InnerProd(y1_exact, y1_exact, num_rows));
       double error2 = 0.0;
-      if (mv.input.AAT_flag == 1) error2 = sqrt(InnerProd(e2, e2, num_rows));
+      if (mv.input.AAT_flag == 1) error2 = sqrt(InnerProd(e2, e2, num_rows))/sqrt(InnerProd(y2_exact, y2_exact, num_rows));
       if (verbose_output){
          printf("MatVec wall-clock time %e, AT error L2-norm %e, A error L2-norm = %e, iterations = %d\n", mv.output.solve_wtime, error1, error2, iter);
       }
@@ -127,6 +151,7 @@ int main (int argc, char *argv[])
          printf("%e %e %e %d\n", mv.output.solve_wtime, error1, error2, iter);
       }
    }
+   return 0;
 
    free(x);
    free(y1);
