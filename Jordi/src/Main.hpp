@@ -41,7 +41,7 @@ typedef struct{
    int expand_flag;
    int coo_flag;
    int omp_for_flag;
-   int msgQ_flag;
+   int MsgQ_flag;
 }InputData;
 
 typedef struct{

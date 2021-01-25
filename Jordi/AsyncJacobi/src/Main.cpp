@@ -6,10 +6,11 @@
 int main (int argc, char *argv[])
 {
    SolverData solver;
-   solver.input.solver_type = SYNC_JACOBI;
+   solver.input.solver_type = ASYNC_BLOCK_JACOBI;
    solver.input.num_threads = 1;
    solver.input.num_iters = 50;
    solver.input.atomic_flag = 1;
+   solver.input.MsgQ_flag = 0;
    int verbose_output = 0;
    int num_runs = 1;
    int m = 10; 
@@ -35,13 +36,13 @@ int main (int argc, char *argv[])
       }
       else if (strcmp(argv[arg_index], "-solver") == 0){
          arg_index++;
-         if (strcmp(argv[arg_index], "sync_jacobi") == 0){
+         if (strcmp(argv[arg_index], "sj") == 0){
             solver.input.solver_type = SYNC_JACOBI;
          }
-         else if (strcmp(argv[arg_index], "async_jacobi") == 0){
+         else if (strcmp(argv[arg_index], "aj") == 0){
             solver.input.solver_type = ASYNC_JACOBI;
          }
-         else if (strcmp(argv[arg_index], "async_block_jacobi") == 0){
+         else if (strcmp(argv[arg_index], "abj") == 0){
             solver.input.solver_type = ASYNC_BLOCK_JACOBI;
          }
       }
@@ -55,6 +56,9 @@ int main (int argc, char *argv[])
       }
       else if (strcmp(argv[arg_index], "-verb_out") == 0){
          verbose_output = 1;
+      }
+      else if (strcmp(argv[arg_index], "-MsgQ") == 0){
+         solver.input.MsgQ_flag = 1;
       }
       arg_index++;
    }

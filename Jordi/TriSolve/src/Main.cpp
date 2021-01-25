@@ -23,7 +23,7 @@ int main (int argc, char *argv[])
    ts.input.coo_flag = 0;
    ts.input.async_flag = 1;
    ts.input.omp_for_flag = 0;
-   ts.input.msgQ_flag = 0;
+   ts.input.MsgQ_flag = 0;
    int verbose_output = 0;
    int num_runs = 1;
    int m = 10; 
@@ -91,7 +91,7 @@ int main (int argc, char *argv[])
          }
       }
       else if (strcmp(argv[arg_index], "-MsgQ") == 0){
-         ts.input.msgQ_flag = 1;
+         ts.input.MsgQ_flag = 1;
       }
       arg_index++;
    }

@@ -43,7 +43,7 @@ void TriSolve_FineGrained_COO(TriSolveData *ts,
 
    int q_size;
    Queue Q;
-   if (ts->input.msgQ_flag == 1){
+   if (ts->input.MsgQ_flag == 1){
       Q.type = Q_STDQUEUE;
       q_size = 2*L_n + 2*U_n + L_n + U_n;
       if (Q.type == Q_ARRAY){ 
@@ -106,7 +106,7 @@ void TriSolve_FineGrained_COO(TriSolveData *ts,
       int *L_done_flags_loc;
       int *U_done_flags_loc;
       int *U_init_flags_loc;
-      if ((ts->input.omp_for_flag == 0) || (ts->input.msgQ_flag == 1)){
+      if ((ts->input.omp_for_flag == 0) || (ts->input.MsgQ_flag == 1)){
          U_loc.i = (int *)calloc(U_nnz_loc, sizeof(int));
          U_loc.j = (int *)calloc(U_nnz_loc, sizeof(int));
          U_loc.data = (double *)calloc(U_nnz_loc, sizeof(double));
@@ -148,7 +148,7 @@ void TriSolve_FineGrained_COO(TriSolveData *ts,
       }
 
       int put_stride;
-      if (ts->input.msgQ_flag == 1){
+      if (ts->input.MsgQ_flag == 1){
          put_stride = 2*L_n + 2*U_n;
               
          #pragma omp for schedule(static, lump)
@@ -175,7 +175,7 @@ void TriSolve_FineGrained_COO(TriSolveData *ts,
  
       solve_start = omp_get_wtime();
       while (1){ 
-         if (ts->input.msgQ_flag == 1){ /* msg Q */
+         if (ts->input.MsgQ_flag == 1){ /* Msg Q */
             if (L_count > 0){
                for (int k = 0; k < L_nnz_loc; k++){
                   if (L_done_flags_loc[k] == 0){
@@ -671,7 +671,7 @@ void TriSolve_FineGrained_COO(TriSolveData *ts,
       ts->output.solve_wtime_vec[tid] = omp_get_wtime() - solve_start;
       #pragma omp barrier
 
-      if (ts->input.msgQ_flag == 1){
+      if (ts->input.MsgQ_flag == 1){
          #pragma omp for schedule(static, lump) nowait
          for (int i = 0; i < L_n; i++){
             double z;
@@ -704,4 +704,9 @@ void TriSolve_FineGrained_COO(TriSolveData *ts,
    free(U_init_flags);
 
    free(converge_flags);
+
+   if (ts->input.MsgQ_flag == 1){
+      qDestroyLock(&Q);
+      qFree(&Q);
+   }
 }
