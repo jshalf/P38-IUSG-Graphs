@@ -4,6 +4,7 @@ MATVECT_SRCDIR = src
 CPPFILES = \
 	$(SRCDIR)/Misc.cpp \
 	$(SRCDIR)/Matrix.cpp \
+	$(SRCDIR)/MsgQ.cpp \
         $(MATVECT_SRCDIR)/MatVec_CSR.cpp \
 	$(MATVECT_SRCDIR)/MatVec_COO.cpp \
 	$(MATVECT_SRCDIR)/Main.cpp \

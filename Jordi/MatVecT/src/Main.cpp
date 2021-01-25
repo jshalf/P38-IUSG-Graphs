@@ -12,6 +12,7 @@ int main (int argc, char *argv[])
    mv.input.AAT_flag = 0;
    mv.input.expand_flag = 0;
    mv.input.coo_flag = 0;
+   mv.input.MsgQ_flag = 0;
    int verbose_output = 0;
    int num_runs = 1;
    int m = 10; 
@@ -48,6 +49,9 @@ int main (int argc, char *argv[])
       }
       else if (strcmp(argv[arg_index], "-coo") == 0){
          mv.input.coo_flag = 1;
+      }
+      else if (strcmp(argv[arg_index], "-MsgQ") == 0){
+         mv.input.MsgQ_flag = 1;
       }
       arg_index++;
    }
@@ -87,31 +91,29 @@ int main (int argc, char *argv[])
    for (int run = 1; run <= num_runs; run++){
       int iter;
       double start = omp_get_wtime();
-      for (iter = 0; iter < mv.input.num_iters; iter++){
-         for (int i = 0; i < num_cols; i++){
-            y1[i] = 0;
-            if (mv.input.AAT_flag == 1){
-               y2[i] = 0;
-            }
-         } 
-         MatVec_CSR(&mv, A, x, y1_exact);
-
-         if (mv.input.coo_flag == 1){
-            MatVecT_COO(&mv, A, x, y1, y2);
-         }
-         else {
-            MatVecT_CSR(&mv, A, x, y1, y2);
-         }
-
-         for (int i = 0; i < num_cols; i++){
-            e1[i] = y1_exact[i] - y1[i];
-            //printf("%e %e\n", y1_exact[i], y1[i]);
-         }
+      for (int i = 0; i < num_cols; i++){
+         y1[i] = 0;
          if (mv.input.AAT_flag == 1){
-            for (int i = 0; i < num_rows; i++){
-               y2_exact[i] = y1_exact[i];
-               e2[i] = y2_exact[i] - y2[i];
-            }
+            y2[i] = 0;
+         }
+      } 
+      MatVec_CSR(&mv, A, x, y1_exact);
+
+      if (mv.input.coo_flag == 1){
+         MatVecT_COO(&mv, A, x, y1, y2);
+      }
+      else {
+         MatVecT_CSR(&mv, A, x, y1, y2);
+      }
+
+      for (int i = 0; i < num_cols; i++){
+         e1[i] = y1_exact[i] - y1[i];
+         //printf("%e %e\n", y1_exact[i], y1[i]);
+      }
+      if (mv.input.AAT_flag == 1){
+         for (int i = 0; i < num_rows; i++){
+            y2_exact[i] = y1_exact[i];
+            e2[i] = y2_exact[i] - y2[i];
          }
       }
       mv.output.solve_wtime = omp_get_wtime() - start;
