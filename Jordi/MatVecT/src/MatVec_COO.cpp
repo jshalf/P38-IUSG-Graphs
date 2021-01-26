@@ -34,11 +34,18 @@ void MatVecT_COO(MatVecData *mv,
    int nnz = A.nnz;
    int q_size;
    Queue Q;
+   int y_counts = 0;
    if (mv->input.MsgQ_flag == 1){
       Q.type = Q_STDQUEUE;
       q_size = 2*num_rows;
       qAlloc(&Q, q_size, NULL);
       qInitLock(&Q);
+      if (mv->input.AAT_flag == 1){
+         y_counts = 2 * A.nnz;
+      }
+      else {
+         y_counts = A.nnz;
+      }
    }
 
    #pragma omp parallel
@@ -50,7 +57,7 @@ void MatVecT_COO(MatVecData *mv,
    
       if (mv->input.AAT_flag == 1){
          if (mv->input.MsgQ_flag == 1){
-            #pragma omp for
+            #pragma omp for nowait
             for (int k = 0; k < nnz; k++){
                double z;
                z = A.data[k] * x[A.i[k]];
@@ -58,14 +65,18 @@ void MatVecT_COO(MatVecData *mv,
                z = A.data[k] * x[A.j[k]];
                qPut(&Q, num_rows+A.i[k], z);
             }
-            #pragma omp for
-            for (int i = 0; i < num_rows; i++){
-               double z;
-               while(qGet(&Q, i, &z)){
-                  y1[i] += z;
-               }
-               while(qGet(&Q, num_rows+i, &z)){
-                  y2[i] += z;
+            while (y_counts > 0){
+               #pragma omp for nowait
+               for (int i = 0; i < num_rows; i++){
+                  double z;
+                  while(qGet(&Q, i, &z)){
+                     y1[i] += z;
+                     y_counts--;
+                  }
+                  while(qGet(&Q, num_rows+i, &z)){
+                     y2[i] += z;
+                     y_counts--;
+                  }
                }
             }
          }
@@ -115,17 +126,20 @@ void MatVecT_COO(MatVecData *mv,
       }
       else {
          if (mv->input.MsgQ_flag == 1){
-            #pragma omp for
+            #pragma omp for nowait
             for (int k = 0; k < nnz; k++){
                double z;
                z = A.data[k] * x[A.i[k]];
                qPut(&Q, A.j[k], z);
             }
-            #pragma omp for
-            for (int i = 0; i < num_rows; i++){
-               double z;
-               while(qGet(&Q, i, &z)){
-                  y1[i] += z;
+            while (y_counts > 0){
+               #pragma omp for nowait
+               for (int i = 0; i < num_rows; i++){
+                  double z;
+                  while(qGet(&Q, i, &z)){
+                     y1[i] += z;
+                     y_counts--;
+                  }
                }
             }
          }
@@ -134,7 +148,6 @@ void MatVecT_COO(MatVecData *mv,
             for (int k = 0; k < nnz; k++){
                mv->y1_expand[j_offset + A.j[k]] += A.data[k] * x[A.i[k]];
             }
-   
             #pragma omp for
             for (int k = 0; k < num_cols; k++){
                y1[k] = 0;
