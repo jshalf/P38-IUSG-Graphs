@@ -18,4 +18,6 @@ void LevelSets(CSR A, LevelSetData *lvl_set);
 
 double SumDouble(double *x, int n);
 
+uint64_t rdtsc();
+
 #endif

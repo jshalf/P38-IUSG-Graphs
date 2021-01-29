@@ -81,6 +81,7 @@ void MatVecT_CSR(MatVecData *mv,
                   }
                }
             }
+            #pragma omp barrier
          }
          else if (mv->input.expand_flag == 1){
             #pragma omp for
@@ -91,7 +92,7 @@ void MatVecT_CSR(MatVecData *mv,
                }
             }
    
-            #pragma omp for
+            #pragma omp for nowait
             for (int i = 0; i < num_cols; i++){
                y1[i] = 0;
                for (int j = 0; j < num_threads; j++){
@@ -102,7 +103,7 @@ void MatVecT_CSR(MatVecData *mv,
             }
          }
          else if (mv->input.atomic_flag == 1){
-            #pragma omp for
+            #pragma omp for nowait
             for (int i = 0; i < num_rows; i++){
                for (int jj = A.i_ptr[i]; jj < A.i_ptr[i+1]; jj++){
                   #pragma omp atomic
@@ -113,7 +114,7 @@ void MatVecT_CSR(MatVecData *mv,
             }
          }
          else {
-            #pragma omp for
+            #pragma omp for nowait
             for (int i = 0; i < num_rows; i++){
                for (int jj = A.i_ptr[i]; jj < A.i_ptr[i+1]; jj++){
                   y1[A.j[jj]] += A.data[jj] * x[i];
@@ -143,6 +144,7 @@ void MatVecT_CSR(MatVecData *mv,
 
                }
             }
+            #pragma omp barrier
          }
          else if (mv->input.expand_flag == 1){
             #pragma omp for
@@ -152,7 +154,7 @@ void MatVecT_CSR(MatVecData *mv,
                }
             }
    
-            #pragma omp for
+            #pragma omp for nowait
             for (int i = 0; i < num_cols; i++){
                y1[i] = 0;
                for (int j = 0; j < num_threads; j++){
@@ -163,7 +165,7 @@ void MatVecT_CSR(MatVecData *mv,
             }
          }
          else if (mv->input.atomic_flag == 1){
-            #pragma omp for
+            #pragma omp for nowait
             for (int i = 0; i < num_rows; i++){
                for (int jj = A.i_ptr[i]; jj < A.i_ptr[i+1]; jj++){
                   #pragma omp atomic
@@ -172,7 +174,7 @@ void MatVecT_CSR(MatVecData *mv,
             }
          }
          else {
-            #pragma omp for
+            #pragma omp for nowait
             for (int i = 0; i < num_rows; i++){
                for (int jj = A.i_ptr[i]; jj < A.i_ptr[i+1]; jj++){
                   y1[A.j[jj]] += A.data[jj] * x[i];
@@ -180,7 +182,6 @@ void MatVecT_CSR(MatVecData *mv,
             }
          }
       }
-      #pragma omp barrier
    }
 
    if (mv->input.MsgQ_flag == 1){

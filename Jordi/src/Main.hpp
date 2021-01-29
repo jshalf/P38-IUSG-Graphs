@@ -22,6 +22,7 @@
 #include <vector>
 #include <random>
 #include <queue>
+#include <inttypes.h>
 
 using namespace std;
 

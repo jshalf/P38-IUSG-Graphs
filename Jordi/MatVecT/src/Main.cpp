@@ -113,22 +113,22 @@ int main (int argc, char *argv[])
       x[i] = RandDouble(-1.0, 1.0);
    } 
    for (int run = 1; run <= num_runs; run++){
-      int iter;
-      double start = omp_get_wtime();
-      for (int i = 0; i < num_cols; i++){
-         y1[i] = 0;
-         if (mv.input.AAT_flag == 1){
-            y2[i] = 0;
-         }
-      } 
-      MatVec_CSR(&mv, A, x, y1_exact);
+      //for (int i = 0; i < num_cols; i++){
+      //   y1[i] = 0;
+      //   if (mv.input.AAT_flag == 1){
+      //      y2[i] = 0;
+      //   }
+      //} 
+      //MatVec_CSR(&mv, A, x, y1_exact);
 
+      double start = omp_get_wtime();
       if (mv.input.coo_flag == 1){
          MatVecT_COO(&mv, A, x, y1, y2);
       }
       else {
          MatVecT_CSR(&mv, A, x, y1, y2);
       }
+      mv.output.solve_wtime = omp_get_wtime() - start;
 
       for (int i = 0; i < num_cols; i++){
          e1[i] = y1_exact[i] - y1[i];
@@ -140,15 +140,14 @@ int main (int argc, char *argv[])
             e2[i] = y2_exact[i] - y2[i];
          }
       }
-      mv.output.solve_wtime = omp_get_wtime() - start;
       double error1 = sqrt(InnerProd(e1, e1, num_cols))/sqrt(InnerProd(y1_exact, y1_exact, num_rows));
       double error2 = 0.0;
       if (mv.input.AAT_flag == 1) error2 = sqrt(InnerProd(e2, e2, num_rows))/sqrt(InnerProd(y2_exact, y2_exact, num_rows));
       if (verbose_output){
-         printf("MatVec wall-clock time %e, AT error L2-norm %e, A error L2-norm = %e, iterations = %d\n", mv.output.solve_wtime, error1, error2, iter);
+         printf("MatVec wall-clock time %e, AT error L2-norm %e, A error L2-norm = %e\n", mv.output.solve_wtime, error1, error2);
       }
       else {
-         printf("%e %e %e %d\n", mv.output.solve_wtime, error1, error2, iter);
+         printf("%e %e %e\n", mv.output.solve_wtime, error1, error2);
       }
    }
    return 0;

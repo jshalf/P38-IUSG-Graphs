@@ -79,6 +79,7 @@ void MatVecT_COO(MatVecData *mv,
                   }
                }
             }
+            #pragma omp barrier
          }
          else if (mv->input.expand_flag == 1){
             #pragma omp for
@@ -97,7 +98,7 @@ void MatVecT_COO(MatVecData *mv,
                }
             }
    
-            #pragma omp for
+            #pragma omp for nowait
             for (int k = 0; k < num_rows; k++){
                y2[k] = 0;
                for (int kk = 0; kk < num_threads; kk++){
@@ -108,7 +109,7 @@ void MatVecT_COO(MatVecData *mv,
             }
          }
          else if (mv->input.atomic_flag == 1){
-            #pragma omp for
+            #pragma omp for nowait
             for (int k = 0; k < nnz; k++){
                #pragma omp atomic
                y1[A.j[k]] += A.data[k] * x[A.i[k]];
@@ -117,7 +118,7 @@ void MatVecT_COO(MatVecData *mv,
             }
          }
          else {
-            #pragma omp for
+            #pragma omp for nowait
             for (int k = 0; k < nnz; k++){
                y1[A.j[k]] += A.data[k] * x[A.i[k]];
                y2[A.i[k]] += A.data[k] * x[A.j[k]];
@@ -142,13 +143,14 @@ void MatVecT_COO(MatVecData *mv,
                   }
                }
             }
+            #pragma omp barrier
          }
          else if (mv->input.expand_flag == 1){
             #pragma omp for
             for (int k = 0; k < nnz; k++){
                mv->y1_expand[j_offset + A.j[k]] += A.data[k] * x[A.i[k]];
             }
-            #pragma omp for
+            #pragma omp for nowait
             for (int k = 0; k < num_cols; k++){
                y1[k] = 0;
                for (int kk = 0; kk < num_threads; kk++){
@@ -159,20 +161,19 @@ void MatVecT_COO(MatVecData *mv,
             }
          }
          else if (mv->input.atomic_flag == 1){
-            #pragma omp for
+            #pragma omp for nowait
             for (int k = 0; k < nnz; k++){
                #pragma omp atomic
                y1[A.j[k]] += A.data[k] * x[A.i[k]];
             }
          }
          else {
-            #pragma omp for
+            #pragma omp for nowait
             for (int k = 0; k < nnz; k++){
                y1[A.j[k]] += A.data[k] * x[A.i[k]];
             }
          }
       }
-      #pragma omp barrier
    }
 
    if (mv->input.MsgQ_flag == 1){

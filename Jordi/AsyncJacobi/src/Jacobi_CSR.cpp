@@ -194,8 +194,9 @@ double JacobiRelaxAtomic(CSR A, double *b, double **x, double *x_prev, int i)
    double res = b[i];
    for (int jj = A.i_ptr[i]; jj < A.i_ptr[i+1]; jj++){
       int ii = A.j[jj];
-      #pragma omp aomic read
-      double xii_prev = x_prev[ii];
+      double xii_prev;
+      #pragma omp atomic read
+      xii_prev = x_prev[ii];
       res -= A.data[jj] * xii_prev;
    }
    return (*x)[i] + res / A.diag[i];
