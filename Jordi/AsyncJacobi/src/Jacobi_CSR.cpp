@@ -8,13 +8,15 @@ double JacobiRelaxVolatile(CSR A, double *b, volatile double **x, volatile doubl
 double BlockJacobiRelax(CSR A, double *b, double **x, int i);
 double BlockJacobiRelaxAtomic(CSR A, double *b, double **x, int i);
 double BlockJacobiRelaxVolatile(CSR A, double *b, volatile double **x, int i);
-double BlockJacobiRelaxMsgQ(CSR A, double *b, Queue *Q, int i);
+double BlockJacobiRelaxMsgQ0(CSR A, double *b, Queue *Q, int i);
+double BlockJacobiRelaxMsgQ1(CSR A, double *b, double *x_ghost, Queue *Q, int i);
 
 void Jacobi(SolverData *solver, CSR A, double *b, double **x)
 {
    int solver_type = solver->input.solver_type;
    int num_iters = solver->input.num_iters;
    int n = A.n;
+   int nnz = A.nnz;
    double *x_prev = (double *)calloc(n, sizeof(double));
    //volatile double *x_vol = (double *)calloc(n, sizeof(double));
    //volatile double *x_prev_vol = (double *)calloc(n, sizeof(double));
@@ -25,10 +27,25 @@ void Jacobi(SolverData *solver, CSR A, double *b, double **x)
    }
 
    int q_size;
+   int q_implement_type = 0;
+   vector<vector<int>> put_map(n);
+   double *x_ghost;
    Queue Q;
    if (solver->input.MsgQ_flag == 1){
       Q.type = Q_STDQUEUE;
-      q_size = n;
+      x_ghost = (double *)malloc(nnz * sizeof(double));
+      if (q_implement_type == 1){
+         for (int i = 0; i < n; i++){
+            for (int jj = A.i_ptr[i]; jj < A.i_ptr[i+1]; jj++){
+               int ii = A.j[jj];
+               put_map[ii].push_back(jj);
+            }
+         }
+         q_size = nnz;
+      }
+      else {
+         q_size = n;
+      }
       qAlloc(&Q, q_size, NULL);
       qInitLock(&Q);
    }
@@ -85,18 +102,40 @@ void Jacobi(SolverData *solver, CSR A, double *b, double **x)
       }
       else if (solver_type == ASYNC_BLOCK_JACOBI){
          if (solver->input.MsgQ_flag == 1){
-            #pragma omp for
-            for (int i = 0; i < n; i++){
-               qPut(&Q, i, (*x)[i]);
-            }
-            for (int iter = 0; iter < num_iters; iter++){
-               #pragma omp for nowait
+            if (q_implement_type == 1){ 
+               #pragma omp for
                for (int i = 0; i < n; i++){
-                  double xi = BlockJacobiRelaxMsgQ(A, b, &Q, i);
-                  qPut(&Q, i, xi);
-                  qGet(&Q, i, &xi);
+                  for (int jj = A.i_ptr[i]; jj < A.i_ptr[i+1]; jj++){
+                     int ii = A.j[jj];
+                     x_ghost[jj] = (*x)[ii];
+                  }
                }
-            } 
+               for (int iter = 0; iter < num_iters; iter++){
+                  #pragma omp for nowait
+                  for (int i = 0; i < n; i++){
+                     double xi = (*x)[i];
+                     xi += BlockJacobiRelaxMsgQ1(A, b, x_ghost, &Q, i); 
+                     for (int j = 0; j < put_map[i].size(); j++){
+                        qPut(&Q, put_map[i][j], xi);
+                     }
+                     (*x)[i] = xi;
+                  }
+               }
+            }
+            else {
+               #pragma omp for
+               for (int i = 0; i < n; i++){
+                  qPut(&Q, i, (*x)[i]);
+               }
+               for (int iter = 0; iter < num_iters; iter++){
+                  #pragma omp for nowait
+                  for (int i = 0; i < n; i++){
+                     double xi = BlockJacobiRelaxMsgQ0(A, b, &Q, i);
+                     qPut(&Q, i, xi);
+                     qGet(&Q, i, &xi);
+                  }
+               }
+            }
          }
          else {
             if (solver->input.atomic_flag){
@@ -215,7 +254,7 @@ double BlockJacobiRelaxAtomic(CSR A, double *b, double **x, int i)
    return (*x)[i] + res / A.diag[i];
 }
 
-double BlockJacobiRelaxMsgQ(CSR A, double *b, Queue *Q, int i)
+double BlockJacobiRelaxMsgQ0(CSR A, double *b, Queue *Q, int i)
 {
    double res = b[i];
    for (int jj = A.i_ptr[i]; jj < A.i_ptr[i+1]; jj++){
@@ -227,4 +266,18 @@ double BlockJacobiRelaxMsgQ(CSR A, double *b, Queue *Q, int i)
    double xi;
    qPoll(Q, i, &xi);
    return xi + res / A.diag[i];
+}
+
+double BlockJacobiRelaxMsgQ1(CSR A, double *b, double *x_ghost, Queue *Q, int i)
+{
+   double res = b[i];
+   for (int jj = A.i_ptr[i]; jj < A.i_ptr[i+1]; jj++){
+      int ii = A.j[jj];
+      double xii;
+      if(qPoll(Q, jj, &xii)){
+         qGet(Q, jj, &(x_ghost[jj]));
+      };
+      res -= A.data[jj] * x_ghost[jj];
+   }
+   return res / A.diag[i];
 }
