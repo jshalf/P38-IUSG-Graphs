@@ -205,8 +205,8 @@ int main (int argc, char *argv[])
 
       for (int i = 0; i < num_rows; i++){
          e_x[i] = x_exact[i] - x[i];
-         //printf("%e %e\n", x_exact[i], x[i]);
          e_y[i] = y_exact[i] - y[i];
+         //printf("%e %e\n", y_exact[i], y[i]);
       }
       double error_x = sqrt(InnerProd(e_x, e_x, num_rows))/sqrt(InnerProd(x_exact, x_exact, num_rows));
       double error_y = sqrt(InnerProd(e_y, e_y, num_rows))/sqrt(InnerProd(y_exact, y_exact, num_rows));

@@ -28,38 +28,42 @@ void TriSolve_FineGrained_COO(TriSolveData *ts,
    }
 
    int *L_row_counts = (int *)calloc(L_n, sizeof(int));
-   int *L_prev_row_counts = (int *)calloc(L_n, sizeof(int));
    int *U_row_counts = (int *)calloc(U_n, sizeof(int));
-   int *U_prev_row_counts = (int *)calloc(U_n, sizeof(int));
 
    int *L_done_flags = (int *)calloc(L_nnz, sizeof(int));
    int *U_done_flags = (int *)calloc(U_nnz, sizeof(int));
    int *U_init_flags = (int *)calloc(U_n, sizeof(int));
 
-   for (int i = 0; i < L_n; i++) L_row_counts[i] = L.i_ptr[i+1] - L.i_ptr[i];
-   for (int i = 0; i < U_n; i++) U_row_counts[i] = U.i_ptr[i+1] - U.i_ptr[i] + 1;
+   for (int i = 0; i < L_n; i++) {
+      L_row_counts[i] = L.i_ptr[i+1] - L.i_ptr[i];
+   }
+   for (int i = 0; i < U_n; i++) {
+      U_row_counts[i] = U.i_ptr[i+1] - U.i_ptr[i] + 1;
+   }
 
    int lump = 1;
 
+   vector<vector<int>> L_put_targets(L_n, vector<int>(0)), U_put_targets(U_n, vector<int>(0));
    int q_size;
    Queue Q;
    if (ts->input.MsgQ_flag == 1){
       Q.type = Q_STDQUEUE;
-      q_size = 2*L_n + 2*U_n + L_n + U_n;
-      if (Q.type == Q_ARRAY){ 
-         int *q_lens = (int *)malloc(q_size * sizeof(int));
-         int kk = 0;
-         for (int i = 0; i < L_n; i++, kk++) q_lens[kk] = 2;
-         for (int i = 0; i < L_n; i++, kk++) q_lens[kk] = 2;
-         for (int i = 0; i < U_n; i++, kk++) q_lens[kk] = 2;
-         for (int i = 0; i < U_n; i++, kk++) q_lens[kk] = 2;
-         for (int i = 0; i < L_n; i++, kk++) q_lens[kk] = L_row_counts[i]+1;
-         for (int i = 0; i < U_n; i++, kk++) q_lens[kk] = U_row_counts[i]+1;
-         qAlloc(&Q, q_size, q_lens);
-         free(q_lens);
+      q_size = L_nnz + U_n + L_nnz + L_n + U_n;
+      qAlloc(&Q, q_size, NULL);
+
+      int get_stride = 0;
+      for (int k = 0; k < L_nnz; k++){
+         int j = L.j[k];
+         L_put_targets[j].push_back(get_stride+k);
       }
-      else {
-         qAlloc(&Q, q_size, NULL);
+      get_stride += L_nnz;
+      for (int i = 0; i < U_n; i++){
+         L_put_targets[i].push_back(get_stride+i);
+      }
+      get_stride += U_n;
+      for (int k = 0; k < U_nnz; k++){
+         int j = U.j[k];
+         U_put_targets[j].push_back(get_stride+k);
       }
 
       qInitLock(&Q);
@@ -103,9 +107,9 @@ void TriSolve_FineGrained_COO(TriSolveData *ts,
       CSR L_loc;
       CSR U_loc;
       double *U_diag_loc;
-      int *L_done_flags_loc;
-      int *U_done_flags_loc;
+      int *L_done_flags_loc, *U_done_flags_loc;
       int *U_init_flags_loc;
+      int *L_nnz_map, *U_nnz_map;
       if ((ts->input.omp_for_flag == 0) || (ts->input.MsgQ_flag == 1)){
          U_loc.i = (int *)calloc(U_nnz_loc, sizeof(int));
          U_loc.j = (int *)calloc(U_nnz_loc, sizeof(int));
@@ -116,9 +120,13 @@ void TriSolve_FineGrained_COO(TriSolveData *ts,
          L_loc.data = (double *)calloc(L_nnz_loc, sizeof(double));
          L_loc.diag = (double *)calloc(L_nnz_loc, sizeof(double));
          U_diag_loc = (double *)calloc(U_n_loc, sizeof(double));
+
          L_done_flags_loc = (int *)calloc(L_nnz_loc, sizeof(int));
          U_done_flags_loc = (int *)calloc(U_nnz_loc, sizeof(int));
          U_init_flags_loc = (int *)calloc(U_n_loc, sizeof(int));
+
+         L_nnz_map = (int *)calloc(L_nnz_loc, sizeof(int));
+         U_nnz_map = (int *)calloc(U_nnz_loc, sizeof(int));         
 
          ii = 0;
          #pragma omp for schedule(static, lump)
@@ -134,6 +142,7 @@ void TriSolve_FineGrained_COO(TriSolveData *ts,
             L_loc.j[kk] = L.j[k];
             L_loc.data[kk] = L.data[k];
             L_loc.diag[kk] = L.diag[L.i[k]];
+            L_nnz_map[kk] = k;
             kk++;
          }
          kk = 0;
@@ -143,54 +152,40 @@ void TriSolve_FineGrained_COO(TriSolveData *ts,
             U_loc.j[kk] = U.j[k];
             U_loc.data[kk] = U.data[k];
             U_loc.diag[kk] = U.diag[U.i[k]];
+            U_nnz_map[kk] = k;
             kk++;
          }
       }
-
-      int put_stride;
       if (ts->input.MsgQ_flag == 1){
-         put_stride = 2*L_n + 2*U_n;
-              
-         #pragma omp for schedule(static, lump)
+         #pragma omp for schedule(static, lump) nowait
          for (int i = 0; i < L_n; i++){
-            qPut(&Q, i, (double)L_row_counts[i]);
-            qPut(&Q, L_n+i, x[i]);
+            all_count++;
          }
-         #pragma omp for schedule(static, lump)
+         #pragma omp for schedule(static, lump) nowait
          for (int i = 0; i < U_n; i++){
-            int stride = 2*L_n;
-            qPut(&Q, stride+i, (double)U_row_counts[i]);
-            qPut(&Q, stride+U_n+i, y[i]);
+            all_count++;
          }
- 
-         //for (int i = 0; i < Q.size; i++){
-         //   printf("%d %f %d %d\n", (i+1) % 10, Q.data[i][0], Q.position[i], Q.max_position[i]);
-         //}
-         //queue<double> *q = qGetObj();
-         //for (int i = 0; i < q_size; i++){
-         //   printf("%d\n", q[i].size());
-         //}
       }
+      int get_stride, put_stride;
       #pragma omp barrier
  
       solve_start = omp_get_wtime();
       while (1){ 
          if (ts->input.MsgQ_flag == 1){ /* Msg Q */
+            get_stride = 0;
+            put_stride = L_nnz + U_n + U_nnz;
             if (L_count > 0){
                for (int k = 0; k < L_nnz_loc; k++){
                   if (L_done_flags_loc[k] == 0){
-                     int j = L_loc.j[k];
-                     double L_row_counts_j = 1.0;
-                     qPoll(&Q, j, &L_row_counts_j);
-                     if ((int)L_row_counts_j == 0){
+                     double xj;
+                     if (qGet(&Q, get_stride+L_nnz_map[k], &xj)){
                         int i = L_loc.i[k];
+                        int j = L_loc.j[k];
                         double Lij = L_loc.data[k];
                         double Lii = L_loc.diag[k];
 
-                        double xj, z;
-                        qPoll(&Q, L_n + j, &xj);
-                        z = -xj * (Lij / Lii);
-                        qPut(&Q, put_stride + i, z);
+                        double z = -xj * (Lij / Lii);
+                        qPut(&Q, put_stride+i, z);
 
                         L_count--;
                         all_count--;
@@ -200,42 +195,41 @@ void TriSolve_FineGrained_COO(TriSolveData *ts,
                   }
                }
             }
+            get_stride += L_nnz;
+            put_stride += L_n;
             if (U_init_count > 0){
                ii = 0;
                #pragma omp for schedule(static, lump) nowait
                for (int i = 0; i < U_n; i++){
-                  double L_row_counts_i = 1.0;
-                  qPoll(&Q, i, &L_row_counts_i);
-                  if (U_init_flags_loc[ii] == 0 && (int)L_row_counts_i == 0){
-                     double Uii = U_diag_loc[ii];
+                  if (U_init_flags_loc[ii] == 0){ 
+                     double xi;
+                     if (qGet(&Q, get_stride+i, &xi) == 1){
+                        double Uii = U_diag_loc[ii];
 
-                     double xi, z;
-                     qPoll(&Q, L_n + i, &xi);
-                     z = xi / Uii;
-                     qPut(&Q, put_stride+L_n + i, z);
+                        double z = xi / Uii;
+                        qPut(&Q, put_stride+i, z);
 
-                     U_init_flags_loc[ii] = 1;
-                     U_init_count--;
-                     all_count--;
+                        U_init_flags_loc[ii] = 1;
+                        U_init_count--;
+                        all_count--;
+                     }
                   }
                   ii++;
                }
             }
+            get_stride += U_n;
             if (U_count > 0){
                for (int k = 0; k < U_nnz_loc; k++){
                   if (U_done_flags_loc[k] == 0){
-                     int j = U_loc.j[k];
-                     double U_row_counts_j = 1.0;
-                     qPoll(&Q, 2*L_n + j, &U_row_counts_j);
-                     if ((int)U_row_counts_j == 0){
+                     double yj;
+                     if (qGet(&Q, get_stride+U_nnz_map[k], &yj)){
                         int i = U_loc.i[k];
+                        int j = U_loc.j[k];
                         double Uij = U_loc.data[k];
                         double Uii = U_loc.diag[k];
 
-                        double yj, z;
-                        qPoll(&Q, 2*L_n+U_n + j, &yj);
-                        z = -yj * (Uij / Uii);
-                        qPut(&Q, put_stride+L_n + i, z);
+                        double z = -yj * (Uij / Uii);
+                        qPut(&Q, put_stride+i, z);
 
                         U_count--;
                         all_count--;
@@ -245,26 +239,49 @@ void TriSolve_FineGrained_COO(TriSolveData *ts,
                   }
                }
             }
+
+            get_stride = L_nnz + U_n + U_nnz;
             #pragma omp for schedule(static, lump) nowait
             for (int i = 0; i < L_n; i++){
-               double z;
-               while(qGet(&Q, put_stride + i, &z)){
-                  qAccum(&Q, L_n+i, z);
-                  qAccum(&Q, i, -1.0);
+               if (L_row_counts[i] > 0){
+                  double z;
+                  while (qGet(&Q, get_stride+i, &z)){
+                     x[i] += z;
+                     L_row_counts[i]--;
+                  }
+               }
+               if (L_row_counts[i] == 0){
+                  double xi = x[i];
+                  for (int p = 0; p < L_put_targets[i].size(); p++){
+                     qPut(&Q, L_put_targets[i][p], xi);
+                  }
+                  L_row_counts[i]--;
+                  all_count--;
                }
             }
+            get_stride += L_n;
             #pragma omp for schedule(static, lump) nowait
             for (int i = 0; i < U_n; i++){
-               double z;
-               while(qGet(&Q, put_stride+L_n + i, &z)){
-                  qAccum(&Q, 2*L_n+U_n + i, z);
-                  qAccum(&Q, 2*L_n + i, -1.0);
+               if (U_row_counts[i] > 0){
+                  double z;
+                  while (qGet(&Q, get_stride+i, &z)){
+                     y[i] += z;
+                     U_row_counts[i]--;
+                  }
+               }
+               if (U_row_counts[i] == 0){
+                  double yi = y[i];
+                  for (int p = 0; p < U_put_targets[i].size(); p++){
+                     qPut(&Q, U_put_targets[i][p], yi);
+                  }
+                  U_row_counts[i]--;
+                  all_count--;
                }
             }
          }
          else { /* msg Q */
             if (ts->input.atomic_flag == 1){ /* atomic */
-               if (ts->input.omp_for_flag == 1){ /*omp for */ // TODO: fix deadlock when using OpenMP schedule this is not static
+               if (ts->input.omp_for_flag == 1){ /*omp for */ // TODO: fix deadlock when using OpenMP non-static schedule
                   if (L_count > 0){
                      #pragma omp for schedule(TRISOLVE_OMPFOR_SCHED, lump) nowait
                      for (int k = 0; k < L_nnz; k++){
@@ -670,27 +687,10 @@ void TriSolve_FineGrained_COO(TriSolveData *ts,
       }
       ts->output.solve_wtime_vec[tid] = omp_get_wtime() - solve_start;
       #pragma omp barrier
-
-      if (ts->input.MsgQ_flag == 1){
-         #pragma omp for schedule(static, lump) nowait
-         for (int i = 0; i < L_n; i++){
-            double z;
-            qGet(&Q, L_n + i, &z);
-            x[i] = z;
-         }
-         #pragma omp for schedule(static, lump) nowait
-         for (int i = 0; i < U_n; i++){
-            double z;
-            qGet(&Q, 2*L_n+U_n + i, &z);
-            y[i] = z;
-         }
-      }
    }
 
    free(L_row_counts);
-   free(L_prev_row_counts);
    free(U_row_counts);
-   free(U_prev_row_counts);
 
    if (ts->input.atomic_flag == 0){
       free(dummy_L_row_counts);
