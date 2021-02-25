@@ -20,7 +20,6 @@ int main (int argc, char *argv[])
    /* set defaults */
    TriSolveData ts;
    ts.input.num_threads = 1;
-   ts.input.num_iters = 1;
    ts.input.atomic_flag = 1;
    ts.input.coo_flag = 0;
    ts.input.async_flag = 1;

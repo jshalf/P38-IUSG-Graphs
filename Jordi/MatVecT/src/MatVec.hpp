@@ -15,11 +15,6 @@ void MatVecT_CSR(MatVecData *mv,
                  double *y1,
                  double *y2);
 
-void MatVec_COO(MatVecData *mv,
-                CSR A,
-                double *x,
-                double *y);
-
 void MatVecT_COO(MatVecData *mv,
                  CSR A,
                  double *x,

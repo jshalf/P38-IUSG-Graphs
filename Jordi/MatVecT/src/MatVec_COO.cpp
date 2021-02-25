@@ -2,26 +2,11 @@
 #include "../../src/Matrix.hpp"
 #include "../../src/MsgQ.hpp"
 
-void MatVec_COO(MatVecData *mv,
-                CSR A,
-                double *x,
-                double *y)
-{
-   #pragma omp parallel
-   {
-      double Axi;
-      int num_rows = A.n;
-
-      #pragma omp for
-      for (int i = 0; i < num_rows; i++){
-         Axi = 0.0;
-         for (int jj = A.i_ptr[i]; jj < A.i_ptr[i+1]; jj++){
-            Axi += A.data[jj] * x[A.j[jj]];
-         }
-         y[i] = Axi;
-      }
-   }
-}
+/* **************************************************
+ * MatVecT coordinate format implementation.
+ * very similar to CSR impelmentation.
+ * see MatVec_CSR.cpp for detailed comments.
+ * **************************************************/
 
 void MatVecT_COO(MatVecData *mv,
                  CSR A,
@@ -36,9 +21,8 @@ void MatVecT_COO(MatVecData *mv,
    Queue Q;
    int y_counts = 0;
    if (mv->input.MsgQ_flag == 1){
-      Q.type = Q_STDQUEUE;
       q_size = 2*num_rows;
-      qAlloc(&Q, q_size, NULL);
+      qAlloc(&Q, q_size);
       qInitLock(&Q);
       if (mv->input.AAT_flag == 1){
          y_counts = 2 * A.nnz;

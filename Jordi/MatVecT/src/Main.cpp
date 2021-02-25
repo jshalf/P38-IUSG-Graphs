@@ -7,7 +7,6 @@ int main (int argc, char *argv[])
 {
    MatVecData mv;
    mv.input.num_threads = 1;
-   mv.input.num_iters = 1;
    mv.input.atomic_flag = 1;
    mv.input.AAT_flag = 0;
    mv.input.expand_flag = 0;
@@ -21,46 +20,42 @@ int main (int argc, char *argv[])
 
    int arg_index = 0;
    while (arg_index < argc){
-      if (strcmp(argv[arg_index], "-n") == 0){
+      if (strcmp(argv[arg_index], "-n") == 0){ /* ``size'' of matrix. n*n rows for Laplace, n rows otherwise. */
          arg_index++;
          m = atoi(argv[arg_index]);
       }
-      else if (strcmp(argv[arg_index], "-max_iters") == 0){
-         arg_index++;
-         mv.input.num_iters = atoi(argv[arg_index]);
-      }
-      else if (strcmp(argv[arg_index], "-num_threads") == 0){
+      else if (strcmp(argv[arg_index], "-num_threads") == 0){ /* number of threads */
          arg_index++;
          mv.input.num_threads = atoi(argv[arg_index]);
       }
-      else if (strcmp(argv[arg_index], "-no_atomic") == 0){
+      else if (strcmp(argv[arg_index], "-no_atomic") == 0){ /* use no-atomics implementations */
          mv.input.atomic_flag = 0;
       }
-      else if (strcmp(argv[arg_index], "-num_runs") == 0){
+      else if (strcmp(argv[arg_index], "-num_runs") == 0){ /* number of TriSolve runs */
          arg_index++;
          num_runs = std::max(1, atoi(argv[arg_index]));
       }
-      else if (strcmp(argv[arg_index], "-verb_out") == 0){
+      else if (strcmp(argv[arg_index], "-verb_out") == 0){ /* verbose output */
          verbose_output = 1;
       }
-      else if (strcmp(argv[arg_index], "-expand") == 0){
+      else if (strcmp(argv[arg_index], "-expand") == 0){ /* ``expand'' MatVecT method */
          mv.input.expand_flag = 1;
       }
-      else if (strcmp(argv[arg_index], "-AAT") == 0){
+      else if (strcmp(argv[arg_index], "-AAT") == 0){ /* Compute Ax and A^Tx together */
          mv.input.AAT_flag = 1;
       }
-      else if (strcmp(argv[arg_index], "-coo") == 0){
+      else if (strcmp(argv[arg_index], "-coo") == 0){ /* use coordinate format */
          mv.input.coo_flag = 1;
       }
-      else if (strcmp(argv[arg_index], "-MsgQ") == 0){
+      else if (strcmp(argv[arg_index], "-MsgQ") == 0){ /* use message queues */
          mv.input.MsgQ_flag = 1;
       }
-      else if (strcmp(argv[arg_index], "-problem") == 0){
+      else if (strcmp(argv[arg_index], "-problem") == 0){ /* test problem */
          arg_index++;
-         if (strcmp(argv[arg_index], "5pt") == 0){
+         if (strcmp(argv[arg_index], "5pt") == 0){ /* five-point centered-difference Laplace problem*/
             problem_type = PROBLEM_5PT_POISSON;
          }
-         else if (strcmp(argv[arg_index], "file") == 0){
+         else if (strcmp(argv[arg_index], "file") == 0){ /* read matrix from binary file */
             arg_index++;
             problem_type = PROBLEM_FILE;
             strcpy(mat_file_str, argv[arg_index]);
@@ -71,6 +66,7 @@ int main (int argc, char *argv[])
    
    omp_set_num_threads(mv.input.num_threads);
 
+   /* set up problem */
    CSR A;
    if (problem_type == PROBLEM_FILE){
       char A_mat_file_str[128];
@@ -113,14 +109,17 @@ int main (int argc, char *argv[])
       x[i] = RandDouble(-1.0, 1.0);
    } 
    for (int run = 1; run <= num_runs; run++){
-      //for (int i = 0; i < num_cols; i++){
-      //   y1[i] = 0;
-      //   if (mv.input.AAT_flag == 1){
-      //      y2[i] = 0;
-      //   }
-      //} 
-      //MatVec_CSR(&mv, A, x, y1_exact);
+      for (int i = 0; i < num_cols; i++){
+         y1[i] = 0;
+         if (mv.input.AAT_flag == 1){
+            y2[i] = 0;
+         }
+      }
+      /* serial MatVec (since we are only considering aymmetric matrices right now, Ax = A^Tx).
+       * TODO: handle non-symmetric case.  */ 
+      MatVec_CSR(&mv, A, x, y1_exact);
 
+      /* parallel MatVecT */
       double start = omp_get_wtime();
       if (mv.input.coo_flag == 1){
          MatVecT_COO(&mv, A, x, y1, y2);
@@ -130,6 +129,7 @@ int main (int argc, char *argv[])
       }
       mv.output.solve_wtime = omp_get_wtime() - start;
 
+      /* compute error */
       for (int i = 0; i < num_cols; i++){
          e1[i] = y1_exact[i] - y1[i];
          //printf("%e %e\n", y1_exact[i], y1[i]);
@@ -143,6 +143,7 @@ int main (int argc, char *argv[])
       double error1 = sqrt(InnerProd(e1, e1, num_cols))/sqrt(InnerProd(y1_exact, y1_exact, num_rows));
       double error2 = 0.0;
       if (mv.input.AAT_flag == 1) error2 = sqrt(InnerProd(e2, e2, num_rows))/sqrt(InnerProd(y2_exact, y2_exact, num_rows));
+      /* print stats */
       if (verbose_output){
          printf("MatVec wall-clock time %e, AT error L2-norm %e, A error L2-norm = %e\n", mv.output.solve_wtime, error1, error2);
       }
@@ -150,7 +151,6 @@ int main (int argc, char *argv[])
          printf("%e %e %e\n", mv.output.solve_wtime, error1, error2);
       }
    }
-   return 0;
 
    free(x);
    free(y1);

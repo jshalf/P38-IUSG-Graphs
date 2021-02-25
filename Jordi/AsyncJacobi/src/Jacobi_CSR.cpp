@@ -3,13 +3,9 @@
 #include "../../src/MsgQ.hpp"
 
 double JacobiRelax(CSR A, double *b, double **x, double *x_prev, int i);
-double JacobiRelaxAtomic(CSR A, double *b, double **x, double *x_prev, int i);
-double JacobiRelaxVolatile(CSR A, double *b, volatile double **x, volatile double *x_prev, int i);
-double BlockJacobiRelax(CSR A, double *b, double **x, int i);
-double BlockJacobiRelaxAtomic(CSR A, double *b, double **x, int i);
-double BlockJacobiRelaxVolatile(CSR A, double *b, volatile double **x, int i);
-double BlockJacobiRelaxMsgQ0(CSR A, double *b, Queue *Q, int i);
-double BlockJacobiRelaxMsgQ1(CSR A, double *b, double *x_ghost, Queue *Q, int i);
+double AsyncJacobiRelax(CSR A, double *b, double **x, int i);
+double AsyncJacobiRelaxAtomic(CSR A, double *b, double **x, int i);
+double AsyncJacobiRelaxMsgQ(CSR A, double *b, double *x_ghost, Queue *Q, int i);
 
 void Jacobi(SolverData *solver, CSR A, double *b, double **x)
 {
@@ -27,26 +23,19 @@ void Jacobi(SolverData *solver, CSR A, double *b, double **x)
    }
 
    int q_size;
-   int q_implement_type = 0;
    vector<vector<int>> put_map(n);
    double *x_ghost;
    Queue Q;
    if (solver->input.MsgQ_flag == 1){
-      Q.type = Q_STDQUEUE;
       x_ghost = (double *)malloc(nnz * sizeof(double));
-      if (q_implement_type == 1){
-         for (int i = 0; i < n; i++){
-            for (int jj = A.i_ptr[i]; jj < A.i_ptr[i+1]; jj++){
-               int ii = A.j[jj];
-               put_map[ii].push_back(jj);
-            }
+      for (int i = 0; i < n; i++){
+         for (int jj = A.i_ptr[i]; jj < A.i_ptr[i+1]; jj++){
+            int ii = A.j[jj];
+            put_map[ii].push_back(jj);
          }
-         q_size = nnz;
       }
-      else {
-         q_size = n;
-      }
-      qAlloc(&Q, q_size, NULL);
+      q_size = nnz;
+      qAlloc(&Q, q_size);
       qInitLock(&Q);
    }
 
@@ -65,75 +54,24 @@ void Jacobi(SolverData *solver, CSR A, double *b, double **x)
             }
          }
       }
-      else if (solver_type == SYNC_BLOCK_JACOBI){
-
-      }
       else if (solver_type == ASYNC_JACOBI){
-         if (solver->input.atomic_flag){
-            for (int iter = 0; iter < num_iters; iter++){
-               #pragma omp for nowait
-               for (int i = 0; i < n; i++){
-                  double xi = JacobiRelaxAtomic(A, b, x, x_prev, i);
-                  #pragma omp atomic write
-                  (*x)[i] = xi;
-               }
-               #pragma omp for nowait
-               for (int i = 0; i < n; i++){
-                  double xi;
-                  xi = (*x)[i];
-                  #pragma omp atomic write
-                  x_prev[i] = xi;
-               }
-            }
-         }
-         else {
-            for (int iter = 0; iter < num_iters; iter++){
-               #pragma omp for nowait
-               for (int i = 0; i < n; i++){
-                  double xi = JacobiRelax(A, b, x, x_prev, i);
-                  (*x)[i] = xi;
-               }
-               #pragma omp for nowait
-               for (int i = 0; i < n; i++){
-                  x_prev[i] = (*x)[i];
-               }
-            }
-         }
-      }
-      else if (solver_type == ASYNC_BLOCK_JACOBI){
          if (solver->input.MsgQ_flag == 1){
-            if (q_implement_type == 1){ 
-               #pragma omp for
-               for (int i = 0; i < n; i++){
-                  for (int jj = A.i_ptr[i]; jj < A.i_ptr[i+1]; jj++){
-                     int ii = A.j[jj];
-                     x_ghost[jj] = (*x)[ii];
-                  }
-               }
-               for (int iter = 0; iter < num_iters; iter++){
-                  #pragma omp for nowait
-                  for (int i = 0; i < n; i++){
-                     double xi = (*x)[i];
-                     xi += BlockJacobiRelaxMsgQ1(A, b, x_ghost, &Q, i); 
-                     for (int j = 0; j < put_map[i].size(); j++){
-                        qPut(&Q, put_map[i][j], xi);
-                     }
-                     (*x)[i] = xi;
-                  }
+            #pragma omp for
+            for (int i = 0; i < n; i++){
+               for (int jj = A.i_ptr[i]; jj < A.i_ptr[i+1]; jj++){
+                  int ii = A.j[jj];
+                  x_ghost[jj] = (*x)[ii];
                }
             }
-            else {
-               #pragma omp for
+            for (int iter = 0; iter < num_iters; iter++){
+               #pragma omp for nowait
                for (int i = 0; i < n; i++){
-                  qPut(&Q, i, (*x)[i]);
-               }
-               for (int iter = 0; iter < num_iters; iter++){
-                  #pragma omp for nowait
-                  for (int i = 0; i < n; i++){
-                     double xi = BlockJacobiRelaxMsgQ0(A, b, &Q, i);
-                     qPut(&Q, i, xi);
-                     qGet(&Q, i, &xi);
+                  double xi = (*x)[i];
+                  xi += BlockJacobiRelaxMsgQ(A, b, x_ghost, &Q, i); 
+                  for (int j = 0; j < put_map[i].size(); j++){
+                     qPut(&Q, put_map[i][j], xi);
                   }
+                  (*x)[i] = xi;
                }
             }
          }
@@ -142,7 +80,7 @@ void Jacobi(SolverData *solver, CSR A, double *b, double **x)
                for (int iter = 0; iter < num_iters; iter++){
                   #pragma omp for nowait
                   for (int i = 0; i < n; i++){
-                     double xi = BlockJacobiRelaxAtomic(A, b, x, i);
+                     double xi = AsyncJacobiRelaxAtomic(A, b, x, i);
                      #pragma omp atomic write
                      (*x)[i] = xi;
                   }
@@ -171,21 +109,12 @@ void Jacobi(SolverData *solver, CSR A, double *b, double **x)
    }
    solver->output.solve_wtime = omp_get_wtime() - start; 
 
-   //if (solver->input.atomic_flag &&
-   //    (solver_type == ASYNC_JACOBI || solver_type == ASYNC_BLOCK_JACOBI)){
-   //   for (int i = 0; i < n; i++){
-   //      (*x)[i] = x_vol[i];
-   //   }
-   //}
-
    if (solver->input.MsgQ_flag == 1){
       qDestroyLock(&Q);
       qFree(&Q);
    }
 
    free(x_prev);
-   //free((void *)x_vol);
-   //free((void *)x_prev_vol);
 }
 
 double JacobiRelax(CSR A, double *b, double **x, double *x_prev, int i)
@@ -198,7 +127,7 @@ double JacobiRelax(CSR A, double *b, double **x, double *x_prev, int i)
    return (*x)[i] + res / A.diag[i];
 }
 
-double BlockJacobiRelax(CSR A, double *b, double **x, int i)
+double AsyncJacobiRelax(CSR A, double *b, double **x, int i)
 {
    double res = b[i];
    for (int jj = A.i_ptr[i]; jj < A.i_ptr[i+1]; jj++){
@@ -208,40 +137,7 @@ double BlockJacobiRelax(CSR A, double *b, double **x, int i)
    return (*x)[i] + res / A.diag[i];
 }
 
-double JacobiRelaxVolatile(CSR A, double *b, volatile double **x, volatile double *x_prev, int i)
-{
-   double res = b[i];
-   for (int jj = A.i_ptr[i]; jj < A.i_ptr[i+1]; jj++){
-      int ii = A.j[jj];
-      res -= A.data[jj] * x_prev[ii];
-   }
-   return (*x)[i] + res / A.diag[i];
-}
-
-double BlockJacobiRelaxVolatile(CSR A, double *b, volatile double **x, int i)
-{
-   double res = b[i];
-   for (int jj = A.i_ptr[i]; jj < A.i_ptr[i+1]; jj++){
-      int ii = A.j[jj];
-      res -= A.data[jj] * (*x)[ii];
-   }
-   return (*x)[i] + res / A.diag[i];
-}
-
-double JacobiRelaxAtomic(CSR A, double *b, double **x, double *x_prev, int i)
-{
-   double res = b[i];
-   for (int jj = A.i_ptr[i]; jj < A.i_ptr[i+1]; jj++){
-      int ii = A.j[jj];
-      double xii_prev;
-      #pragma omp atomic read
-      xii_prev = x_prev[ii];
-      res -= A.data[jj] * xii_prev;
-   }
-   return (*x)[i] + res / A.diag[i];
-}
-
-double BlockJacobiRelaxAtomic(CSR A, double *b, double **x, int i)
+double AsyncJacobiRelaxAtomic(CSR A, double *b, double **x, int i)
 {
    double res = b[i];
    for (int jj = A.i_ptr[i]; jj < A.i_ptr[i+1]; jj++){
@@ -254,21 +150,7 @@ double BlockJacobiRelaxAtomic(CSR A, double *b, double **x, int i)
    return (*x)[i] + res / A.diag[i];
 }
 
-double BlockJacobiRelaxMsgQ0(CSR A, double *b, Queue *Q, int i)
-{
-   double res = b[i];
-   for (int jj = A.i_ptr[i]; jj < A.i_ptr[i+1]; jj++){
-      int ii = A.j[jj];
-      double xii;
-      qPoll(Q, ii, &xii);
-      res -= A.data[jj] * xii;
-   }
-   double xi;
-   qPoll(Q, i, &xi);
-   return xi + res / A.diag[i];
-}
-
-double BlockJacobiRelaxMsgQ1(CSR A, double *b, double *x_ghost, Queue *Q, int i)
+double AsyncJacobiRelaxMsgQ(CSR A, double *b, double *x_ghost, Queue *Q, int i)
 {
    double res = b[i];
    for (int jj = A.i_ptr[i]; jj < A.i_ptr[i+1]; jj++){
