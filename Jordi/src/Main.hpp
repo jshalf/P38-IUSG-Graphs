@@ -1,14 +1,21 @@
+/* *
+ * header file that defines structs to be used by all benchmarks
+ * */
+
 #ifndef MAIN_HPP
 #define MAIN_HPP
 
+/* types of solvers used in the AsyncJacobi benchmark */
 #define SYNC_JACOBI  0
 #define ASYNC_JACOBI 1
 #define SYNC_BLOCK_JACOBI  2
 #define ASYNC_BLOCK_JACOBI 3
 
+/* types of solvers used in the TriSolve benchmark */
 #define TRISOLVE_ASYNC 0
 #define TRISOLVE_LEVEL_SCHEDULED 1
 
+/* types of solvers used in the ILU benchmark */
 #define ILU_ASYNC 0
 #define ILU_LEVEL_SCHEDULED 1
 
@@ -26,35 +33,37 @@
 
 using namespace std;
 
+/* triplet struct used for reading binary matrix files */
 typedef struct{
-   int i;
-   int j;
-   double val;
+   int i; /* row index */
+   int j; /* column index */
+   double val; /* value of (i,j) element */
 }Triplet_AOS;
 
+/* input data (primarily taken in at command line) */
 typedef struct{
-   int solver_type;
-   int num_threads;
-   int num_iters;
-   int async_flag;
-   int atomic_flag;
-   int AAT_flag;
-   int expand_flag;
-   int coo_flag;
-   int omp_for_flag;
-   int MsgQ_flag;
+   int solver_type; /* solver type */
+   int num_threads; /* number of threads */
+   int num_iters; /* number of iterations */
+   int async_flag; /* is solver asynchronous? */
+   int atomic_flag; /* is solver using atomics? */
+   int AAT_flag; /* will both the sparse matrix-vector and sparse matrix-transpose-vector products both be computed? (only used in MatVecT benchmark) */
+   int expand_flag; /* will the ``expand''scheme be used? (only used in MatVecT benchmark) */
+   int coo_flag; /* are we using coordinate format? */
+   int omp_for_flag; /* are we using OpenMP for loops? */
+   int MsgQ_flag; /* Are we using message queues instead of atomics? */
 }InputData;
 
+/* Output data */
 typedef struct{
-   double solve_wtime;
-   double setup_wtime;
-   double solve_wtime_thread;
-   double *atomic_wtime_vec;
-   double *solve_wtime_vec;
-   int *num_relax;
-   int **relax_hist;
+   double solve_wtime; /* solve wall-clock time */
+   double setup_wtime; /* setup wall-clock time */
+   double *atomic_wtime_vec; /* atomic wall-clock time per thread */
+   double *solve_wtime_vec; /* solve wall-clock time per thread */
+   int *num_relax; /* number of relaxations (only used by AsyncJacobi benchmark) */
 }OutputData;
 
+/* Struct used by MatVecT benchmark */
 typedef struct{
    InputData input;
    OutputData output;
@@ -62,30 +71,34 @@ typedef struct{
    double *y2_expand;
 }MatVecData;
 
+/* Struct used by AsyncJacobi benchmark */
 typedef struct{
    InputData input;
    OutputData output;
 }SolverData;
 
+/* Level set data used in level scheduling algorithms */
 typedef struct{
-   int *perm;
-   vector<int> level_size;
-   vector<int> level_start;
-   int num_levels;
+   int *perm; /* row ordering (rows are ordered by level)*/
+   vector<int> level_size; /* number of rows in each level */
+   vector<int> level_start; /* starting point in ``perm'' for each level */
+   int num_levels; /* number of level sets */
 }LevelSetData;
 
+/* Struct used by TriSolve benchmark */
 typedef struct{
    InputData input;
    OutputData output;
-   LevelSetData L_lvl_set;
-   LevelSetData U_lvl_set;
+   LevelSetData L_lvl_set; /* level set data for lower triangular part */
+   LevelSetData U_lvl_set; /* level set data for upper triangular part */
 }TriSolveData;
 
+/* Struct used by ILU benchmark */
 typedef struct{
    InputData input;
    OutputData output;
-   LevelSetData L_lvl_set;
-   LevelSetData U_lvl_set;
+   LevelSetData L_lvl_set; /* level set data for lower triangular part */
+   LevelSetData U_lvl_set; /* level set data for upper triangular part */
 }ILUData;
 
 #endif

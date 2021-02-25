@@ -1,14 +1,16 @@
 #include "TriSolve.hpp"
 #include "../../src/Matrix.hpp"
 
+/* Serial TriSolve (sparse matrix must be in compressed sparse row (CSR) format) */
 void TriSolve_CSR(TriSolveData *ts,
-                  CSR L,
-                  CSR U,
-                  int *L_perm,
-                  int *U_perm,
-                  double *x,
-                  double *y,
-                  double *b)
+                  CSR L, /* lower triangular part of matrix */
+                  CSR U, /* upper triangular part of matrix */
+                  int *L_perm, /* ordering for computing elements of x */
+                  int *U_perm, /* ordering for computing elements of y */
+                  double *x, /* result of Lx=b (output) */
+                  double *y, /* result of Uy=x (output) */
+                  double *b /* right-hand side */
+                  )
 {
    int num_rows = L.n;
 
@@ -28,11 +30,12 @@ void TriSolve_CSR(TriSolveData *ts,
    }
 }
 
+/* Level-scheduled TriSolve (sparse matrix must be in compressed sparse row (CSR) format) */
 void TriSolve_LevelSets_CSR(TriSolveData *ts,
-                            CSR L,
-                            CSR U,
-                            double *x,
-                            double *y,
+                            CSR L, /* lower triangular part of matrix */
+                            CSR U, /* upper triangular part of matrix */
+                            double *x, /* result of Lx=b (output) */
+                            double *y, /* result of Uy=x (output) */
                             double *b)
 {
    int num_rows = L.n;
@@ -40,8 +43,8 @@ void TriSolve_LevelSets_CSR(TriSolveData *ts,
 
    #pragma omp parallel
    {
-      for (int l = 0; l < ts->L_lvl_set.num_levels; l++){
-         #pragma omp for schedule(static, lump)
+      for (int l = 0; l < ts->L_lvl_set.num_levels; l++){ /* loop over level sets L */
+         #pragma omp for schedule(static, lump) /* parallel loop over elements within level set */
          for (int ii = ts->L_lvl_set.level_start[l]; ii < ts->L_lvl_set.level_start[l+1]; ii++){
             int i = ts->L_lvl_set.perm[ii];
             x[i] = b[i] / L.diag[i];
@@ -50,8 +53,8 @@ void TriSolve_LevelSets_CSR(TriSolveData *ts,
             }
          }
       }
-      for (int l = 0; l < ts->U_lvl_set.num_levels; l++){
-         #pragma omp for schedule(static, lump)
+      for (int l = 0; l < ts->U_lvl_set.num_levels; l++){ /* loop over level sets U */
+         #pragma omp for schedule(static, lump) /* parallel loop over elements within level set */
          for (int ii = ts->U_lvl_set.level_start[l]; ii < ts->U_lvl_set.level_start[l+1]; ii++){
             int i = ts->U_lvl_set.perm[ii];
             y[i] = x[i] / U.diag[i];

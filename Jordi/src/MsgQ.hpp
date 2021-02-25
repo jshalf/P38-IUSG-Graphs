@@ -1,27 +1,20 @@
 #ifndef MSGQ_HPP
 #define MSGQ_HPP
 
-#define Q_ARRAY 0
-#define Q_STDQUEUE 1
-
 #include "Main.hpp"
 
+/* queue data structure */
 typedef struct {
-   double **a;
-   queue<double> *q;
-   int *max_position;
-   int *position;
-   int size;
-   int type;
-   omp_lock_t lock;
+   queue<double> *q; /* std queue */
+   int size; /* size of queue */
+   omp_lock_t lock; /* OpenMP lock */
 } Queue;
 
 void qInitLock(Queue *Q);
 
 void qDestroyLock(Queue *Q);
 
-//void qAlloc(int n);
-void qAlloc(Queue *Q, int n, int *q_lens);
+void qAlloc(Queue *Q, int n);
 
 void qFree(Queue *Q);
 
@@ -36,6 +29,5 @@ int qGet(Queue *Q, int destinationQID, double *destinationData);
 void qAccum(Queue *Q, int destinationQID, double y);
 
 Queue* qGetObj(void);
-//queue<double>* qGetObj(void);
 
 #endif

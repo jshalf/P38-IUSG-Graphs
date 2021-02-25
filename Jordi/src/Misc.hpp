@@ -8,7 +8,7 @@ double RandDouble(double low, double high);
 
 int SumInt(int *x, int n);
 
-double RandInt(int low, int high, double seed);
+int RandInt(int low, int high, double seed);
 
 double InnerProd(double *x, double *y, int n);
 

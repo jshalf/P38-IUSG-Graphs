@@ -1,149 +1,118 @@
 #include "Main.hpp"
 #include "MsgQ.hpp"
 
-void qPopArray(Queue *Q, int destinationQID)
-{
-   int i = destinationQID;
-
-   for (int j = 0; j < Q->position[i]; j++){
-      Q->a[i][j] = Q->a[i][j+1];
-   }
-}
-
+/* initialize mutex lock */
 void qInitLock(Queue *Q)
 {
    omp_init_lock(&(Q->lock));
 }
 
+/* destroy mutex lock */
 void qDestroyLock(Queue *Q)
 {
    omp_destroy_lock(&(Q->lock));
 }
 
-void qAlloc(Queue *Q, int n, int *q_lens)
+/* initialize queue data */
+void qAlloc(Queue *Q,
+            int n /* length of vector of queues */
+            )
 {
    Q->size = n;
-   if (Q->type == Q_ARRAY){ 
-      Q->position = (int *)malloc(Q->size * sizeof(int));
-      Q->max_position = (int *)malloc(Q->size * sizeof(int));
-      Q->a = (double **)malloc(Q->size * sizeof(double *));
-      for (int i = 0; i < Q->size; i++){
-         Q->position[i] = -1;
-         Q->max_position[i] = q_lens[i]-1;
-         Q->a[i] = (double *)malloc(q_lens[i] * sizeof(double));
-      }
-   }
-   else {
-      Q->q = new queue<double>[Q->size];
-   }
+   Q->q = new queue<double>[Q->size];
 }
 
+/* free queue data */
 void qFree(Queue *Q)
 {
-   if (Q->type == Q_ARRAY){
-      for (int i = 0; i < Q->size; i++){
-         free(Q->a[i]);
-      }
-      free(Q->a);
-      free(Q->position);
-      free(Q->max_position);
-   }
-   else {
-      delete [] Q->q;
-   }
+   delete [] Q->q;
 }
 
-void qPut(Queue *Q, int destinationQID, double sourceData)
+/* put primitive */
+void qPut(Queue *Q, 
+          int destinationQID, /* destination queue id */
+          double sourceData /* source data */
+          )
 {
    int i = destinationQID;
 
-   omp_set_lock(&(Q->lock));
+   omp_set_lock(&(Q->lock)); /* acquire lock */
 
-   if (Q->type == Q_ARRAY){   
-      if (Q->position[i] < Q->max_position[i]){
-         Q->position[i]++;
-         Q->a[i][Q->position[i]] = sourceData;
-      }
-   }
-   else {
-      Q->q[i].push(sourceData);
-   }
+   Q->q[i].push(sourceData); /* push to queue */
 
-   omp_unset_lock(&(Q->lock));
+   omp_unset_lock(&(Q->lock)); /* release lock */
 }
 
-int qPoll(Queue *Q, int destinationQID, double *destinationData)
+int qPoll(Queue *Q,
+          int destinationQID, /* destination queue id */
+          double *destinationData /* destination data */
+          )
 {
    int flag = 0;
    int i = destinationQID;
    double x;
     
-   omp_set_lock(&(Q->lock));
+   omp_set_lock(&(Q->lock)); /* acquire lock */
 
-   if (Q->type == Q_ARRAY){
-      if (Q->position[i] > -1){
-         *destinationData = Q->a[i][0];
-         flag = 1;
-      }
-   }
-   else {
-      if (!(Q->q[i].empty())){
-         *destinationData = Q->q[i].front();
-         flag = 1;
-      }
+   if (!(Q->q[i].empty())){ /* if the queue is empty, return zero flag */
+      /* if queue is not empty, get front and flag of one */
+      *destinationData = Q->q[i].front();
+      flag = 1;
    }
 
-   omp_unset_lock(&(Q->lock));
+   omp_unset_lock(&(Q->lock)); /* release lock */
 
    return flag;
 }
 
-void qWait(Queue *Q, int destinationQID, double *destinationData)
+void qWait(Queue *Q,
+           int destinationQID, /* destination queue id */
+           double *destinationData /* destination data */
+           )
 {
    int q_empty = 1;
    int i = destinationQID;
    double x;
 
-   while (qPoll(Q, i, &x) == 0);
+   while (qPoll(Q, i, &x) == 0); /* poll until queue is not empty */
 
    *destinationData = x;
 }
 
-int qGet(Queue *Q, int destinationQID, double *destinationData)
+/* get primitive */
+int qGet(Queue *Q,
+         int destinationQID, /* destination queue id */
+         double *destinationData /* destination data */
+         )
 {
    int q_empty = 1;
    int i = destinationQID;
    double x;
    int flag = 0;
 
-   omp_set_lock(&(Q->lock));
+   omp_set_lock(&(Q->lock)); /* acquire lock */
 
-   if (Q->type == Q_ARRAY){
-      if (Q->position[i] > -1){
-         *destinationData = Q->a[i][0];
-         qPopArray(Q, i);
-         Q->position[i]--;
-         flag = 1;
-      }
-   }
-   else {
-      if (!(Q->q[i].empty())){
-         *destinationData = Q->q[i].front();
-         Q->q[i].pop();
-         flag = 1;
-      }
+   if (!(Q->q[i].empty())){ /* if the queue is empty, return zero flag */
+      /* if queue is not empty, pop front and flag of one */
+      *destinationData = Q->q[i].front();
+      Q->q[i].pop(); /* pop front */
+      flag = 1;
    }
 
-   omp_unset_lock(&(Q->lock));
+   omp_unset_lock(&(Q->lock)); /* release lock */
 
    return flag;
 }
 
-void qAccum(Queue *Q, int destinationQID, double y)
+/* accumulation (assumes single-write/mulitple-read) */
+void qAccum(Queue *Q,
+            int destinationQID, /* destination queue id */
+            double y /* accumulation data */
+            )
 {
    double x;
-   qWait(Q, destinationQID, &x);
-   x += y;
-   qPut(Q, destinationQID, x);
-   qGet(Q, destinationQID, &x);
+   qWait(Q, destinationQID, &x); /* get the queue data */
+   x += y; /* accumulate */
+   qPut(Q, destinationQID, x); /* push the accum result to the queue */
+   qGet(Q, destinationQID, &x); /* pop off old data */
 }

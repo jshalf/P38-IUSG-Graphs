@@ -9,6 +9,7 @@
 
 using namespace std;
 
+//TODO: fix SuperLU stuff
 #ifdef USE_SUPERLU
 void SuperLU_MT_Setup(CSR A, SuperMatrix *A_slu, SuperMatrix *B_slu, SuperMatrix *L_slu, SuperMatrix *U_slu, SuperMatrix *AA_slu, SuperMatrix *AC_slu, double *b, int num_threads);
 void Print_SuperMatrix(SuperMatrix A_slu, CSR *A);
@@ -16,6 +17,7 @@ void Print_SuperMatrix(SuperMatrix A_slu, CSR *A);
 
 int main (int argc, char *argv[])
 {
+   /* set defaults */
    TriSolveData ts;
    ts.input.num_threads = 1;
    ts.input.num_iters = 1;
@@ -33,64 +35,61 @@ int main (int argc, char *argv[])
    double start;
    char mat_file_str[128];
 
+   /* command line arguments */
    int arg_index = 0;
    while (arg_index < argc){
-      if (strcmp(argv[arg_index], "-n") == 0){
+      if (strcmp(argv[arg_index], "-n") == 0){ /* ``size'' of matrix. n*n rows for Laplace, n rows otherwise. */
          arg_index++;
          m = atoi(argv[arg_index]);
       }
-      else if (strcmp(argv[arg_index], "-max_iters") == 0){
-         arg_index++;
-         ts.input.num_iters = atoi(argv[arg_index]);
-      }
-      else if (strcmp(argv[arg_index], "-num_threads") == 0){
+      else if (strcmp(argv[arg_index], "-num_threads") == 0){ /* number of threads */
          arg_index++;
          ts.input.num_threads = atoi(argv[arg_index]);
       }
-      else if (strcmp(argv[arg_index], "-no_atomic") == 0){
+      else if (strcmp(argv[arg_index], "-no_atomic") == 0){ /* use no-atomics implementations */
          ts.input.atomic_flag = 0;
       }
-      else if (strcmp(argv[arg_index], "-num_runs") == 0){
+      else if (strcmp(argv[arg_index], "-num_runs") == 0){ /* number of TriSolve runs */
          arg_index++;
          num_runs = std::max(1, atoi(argv[arg_index]));
       }
-      else if (strcmp(argv[arg_index], "-verb_out") == 0){
+      else if (strcmp(argv[arg_index], "-verb_out") == 0){ /* verbose output */
          verbose_output = 1;
       }
-      else if (strcmp(argv[arg_index], "-solver") == 0){
+      else if (strcmp(argv[arg_index], "-solver") == 0){ /* solver type */
          arg_index++;
-         if (strcmp(argv[arg_index], "async") == 0){
+         if (strcmp(argv[arg_index], "async") == 0){ /* asynchronous iterative fine-grained */
             solver_type = TRISOLVE_ASYNC;
          }
-         else if (strcmp(argv[arg_index], "lev_sched") == 0){
+         else if (strcmp(argv[arg_index], "lev_sched") == 0){ /* classical level-scheduled */
             solver_type = TRISOLVE_LEVEL_SCHEDULED;
          }
       }
-      else if (strcmp(argv[arg_index], "-mxr_nnz") == 0){
+      else if (strcmp(argv[arg_index], "-mxr_nnz") == 0){ /* max number of non-zeros per row (only used for generating random amtrices) */
          arg_index++;
          max_row_nnz = atoi(argv[arg_index]);
       }
-      else if (strcmp(argv[arg_index], "-sync") == 0){
+      else if (strcmp(argv[arg_index], "-sync") == 0){ /* make the async solver synchronous */
          ts.input.async_flag = 0;
       }
-      else if (strcmp(argv[arg_index], "-omp_for") == 0){
+      else if (strcmp(argv[arg_index], "-omp_for") == 0){ /* use OpenMP for loops in the async solver */
          ts.input.omp_for_flag = 1;
       }
-      else if (strcmp(argv[arg_index], "-problem") == 0){
+      else if (strcmp(argv[arg_index], "-problem") == 0){ /* test problem */
          arg_index++;
-         if (strcmp(argv[arg_index], "5pt") == 0){
+         if (strcmp(argv[arg_index], "5pt") == 0){ /* five-point centered-difference Laplace problem*/
             problem_type = PROBLEM_5PT_POISSON;
          }
-         else if (strcmp(argv[arg_index], "rand") == 0){
+         else if (strcmp(argv[arg_index], "rand") == 0){ /* random matrix */
             problem_type = PROBLEM_RANDOM;
          }
-         else if (strcmp(argv[arg_index], "file") == 0){
+         else if (strcmp(argv[arg_index], "file") == 0){ /* read matrix from binary file */
             arg_index++;
             problem_type = PROBLEM_FILE;
             strcpy(mat_file_str, argv[arg_index]);
          }
       }
-      else if (strcmp(argv[arg_index], "-MsgQ") == 0){
+      else if (strcmp(argv[arg_index], "-MsgQ") == 0){ /* use message queues in async solvers */
          ts.input.MsgQ_flag = 1;
       }
       arg_index++;
@@ -100,6 +99,7 @@ int main (int argc, char *argv[])
    
    omp_set_num_threads(ts.input.num_threads);
 
+   /* set up problem (TODO: add 5pt problem) */
    CSR A, L, U;
    //Laplace_2D_5pt(ts.input, &A, m);
    //num_rows = A.n;
@@ -137,6 +137,7 @@ int main (int argc, char *argv[])
    }
    
    ts.output.setup_wtime = 0.0;
+   /* set up for level scheduling method */
    if (solver_type == TRISOLVE_LEVEL_SCHEDULED){
       start = omp_get_wtime();
       LevelSets(L, &(ts.L_lvl_set));
@@ -144,6 +145,7 @@ int main (int argc, char *argv[])
       ts.output.setup_wtime = omp_get_wtime() - start;
    }
    num_rows = L.n;
+   /* set up stuff for serial solver */
    int *L_perm = (int *)calloc(num_rows, sizeof(int));
    int *U_perm = (int *)calloc(num_rows, sizeof(int));
    for (int i = 0; i < num_rows; i++){
@@ -187,8 +189,10 @@ int main (int argc, char *argv[])
          ts.output.solve_wtime_vec[t] = 0.0;
          ts.output.num_relax[t] = 0;
       }
+      /* serial solver first */
       TriSolve_CSR(&ts, L, U, L_perm, U_perm, x_exact, y_exact, b);
 
+      /* parallel solver */
       if (solver_type == TRISOLVE_LEVEL_SCHEDULED){
          start = omp_get_wtime();
          TriSolve_LevelSets_CSR(&ts, L, U, x, y, b);
@@ -203,6 +207,7 @@ int main (int argc, char *argv[])
          ts.output.solve_wtime = solve_wtime_sum / (double)ts.input.num_threads;
       }
 
+      /* compute the error between the serial and parallel solvers */
       for (int i = 0; i < num_rows; i++){
          e_x[i] = x_exact[i] - x[i];
          e_y[i] = y_exact[i] - y[i];
@@ -212,6 +217,7 @@ int main (int argc, char *argv[])
       double error_y = sqrt(InnerProd(e_y, e_y, num_rows))/sqrt(InnerProd(y_exact, y_exact, num_rows));
       double atomic_wtime_sum = SumDouble(ts.output.atomic_wtime_vec, ts.input.num_threads);
       int num_relax_sum = SumInt(ts.output.num_relax, ts.input.num_threads);
+      /* print output stats */
       if (verbose_output){
          printf("Solve wall-clock time = %e\nSetup wall-clock time = %e\nAtomics wall-clock time = %e\nL solve forward-error L2-norm = %e\nU solve forward-error L2-norm = %e\nmean relaxations = %f\n",
                  ts.output.solve_wtime, ts.output.setup_wtime, atomic_wtime_sum/(double)ts.input.num_threads, error_x, error_y, (double)num_relax_sum/(double)ts.input.num_threads);

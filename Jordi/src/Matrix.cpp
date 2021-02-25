@@ -1,9 +1,17 @@
+/*
+ * functions related to generating test matrices
+ */
+
 #include "Matrix.hpp"
 #include "Misc.hpp"
 
 using namespace std;
 
-void Laplace_2D_5pt(InputData input, CSR *A, int n)
+/* five-point centered difference discretization of the Laplace equation */
+void Laplace_2D_5pt(InputData input, /* input data */
+                    CSR *A, /* sparse matrix data (output) */
+                    int n /* size of grid (n*n rows) */
+                    )
 {
    int col;
    int N = n*n;
@@ -69,7 +77,13 @@ void Laplace_2D_5pt(InputData input, CSR *A, int n)
    //}
 }
 
-void RandomMatrix(InputData input, CSR *A, int n, int max_row_nnz, int mat_type)
+/* Generate a random sparse matrix */
+void RandomMatrix(InputData input, /* input data */
+                  CSR *A, /* matrix data (output) */
+                  int n, /* number of rows */
+                  int max_row_nnz, /* maximum number of non-zeros per row */ 
+                  int mat_type /* matrix type can be symmetric, lower triangular, or upper triangular */
+                  )
 {
    A->diag = (double *)calloc(n, sizeof(double));
    double low = -1.0/(double)(max_row_nnz);
@@ -143,6 +157,7 @@ void RandomMatrix(InputData input, CSR *A, int n, int max_row_nnz, int mat_type)
    }
 }
 
+/* print coordinate format of sparse matrix */
 void PrintCOO(CSR A, char *filename, int print_diag_flag)
 {
    FILE *file = fopen(filename, "w");
@@ -158,6 +173,7 @@ void PrintCOO(CSR A, char *filename, int print_diag_flag)
    fclose(file);
 }
 
+/* read matrix from binary file. matrix entries must be ordered by increasing row index then increasing column index */
 void freadBinaryMatrix(char *mat_file_str, CSR *A, int include_diag_flag)
 {
    size_t size;
