@@ -5,8 +5,9 @@
 
 int main (int argc, char *argv[])
 {
+   /* set defaults */
    SolverData solver;
-   solver.input.solver_type = ASYNC_BLOCK_JACOBI;
+   solver.input.solver_type = ASYNC_JACOBI;
    solver.input.num_threads = 1;
    solver.input.num_iters = 50;
    solver.input.atomic_flag = 1;
@@ -20,54 +21,51 @@ int main (int argc, char *argv[])
 
    int arg_index = 0;
    while (arg_index < argc){
-      if (strcmp(argv[arg_index], "-n") == 0){
+      if (strcmp(argv[arg_index], "-n") == 0){ /* ``size'' of matrix. n*n rows for Laplace, n rows otherwise. */
          arg_index++;
          m = atoi(argv[arg_index]);
       }
-      else if (strcmp(argv[arg_index], "-max_iters") == 0){
+      else if (strcmp(argv[arg_index], "-max_iters") == 0){ /* max number of iterations */
          arg_index++;
          solver.input.num_iters = atoi(argv[arg_index]);
       }
-      else if (strcmp(argv[arg_index], "-num_threads") == 0){
+      else if (strcmp(argv[arg_index], "-num_threads") == 0){ /* number of threads */
          arg_index++;
          solver.input.num_threads = atoi(argv[arg_index]);
       }
-      else if (strcmp(argv[arg_index], "-w") == 0){
+      else if (strcmp(argv[arg_index], "-w") == 0){ /* weight for weights Jacobi (currently not used) */
          arg_index++;
          w = atof(argv[arg_index]);
       }
-      else if (strcmp(argv[arg_index], "-solver") == 0){
+      else if (strcmp(argv[arg_index], "-solver") == 0){ /* solver type */
          arg_index++;
-         if (strcmp(argv[arg_index], "sj") == 0){
+         if (strcmp(argv[arg_index], "sj") == 0){ /* classical synchronous Jacobi */
             solver.input.solver_type = SYNC_JACOBI;
          }
-         else if (strcmp(argv[arg_index], "aj") == 0){
+         else if (strcmp(argv[arg_index], "aj") == 0){ /* asynchronous Jacobi */
             solver.input.solver_type = ASYNC_JACOBI;
          }
-         else if (strcmp(argv[arg_index], "abj") == 0){
-            solver.input.solver_type = ASYNC_BLOCK_JACOBI;
-         }
       }
-      else if (strcmp(argv[arg_index], "-atomic") == 0){
+      else if (strcmp(argv[arg_index], "-atomic") == 0){ /* use atomics for async Jacobi */
          arg_index++;
          solver.input.atomic_flag = atoi(argv[arg_index]);
       }
-      else if (strcmp(argv[arg_index], "-num_runs") == 0){
+      else if (strcmp(argv[arg_index], "-num_runs") == 0){ /* number of separate Jacobi runs */
          arg_index++;
          num_runs = std::max(1, atoi(argv[arg_index]));
       }
-      else if (strcmp(argv[arg_index], "-verb_out") == 0){
+      else if (strcmp(argv[arg_index], "-verb_out") == 0){ /* verbose output */
          verbose_output = 1;
       }
-      else if (strcmp(argv[arg_index], "-MsgQ") == 0){
+      else if (strcmp(argv[arg_index], "-MsgQ") == 0){ /* use message queues in async solvers */
          solver.input.MsgQ_flag = 1;
       }
-      else if (strcmp(argv[arg_index], "-problem") == 0){
+      else if (strcmp(argv[arg_index], "-problem") == 0){ /* test problem */
          arg_index++;
-         if (strcmp(argv[arg_index], "5pt") == 0){
+         if (strcmp(argv[arg_index], "5pt") == 0){ /* five-point centered-difference Laplace problem*/
             problem_type = PROBLEM_5PT_POISSON;
          }
-         else if (strcmp(argv[arg_index], "file") == 0){
+         else if (strcmp(argv[arg_index], "file") == 0){ /* read matrix from binary file */
             arg_index++;
             problem_type = PROBLEM_FILE;
             strcpy(mat_file_str, argv[arg_index]);
@@ -75,9 +73,14 @@ int main (int argc, char *argv[])
       }
       arg_index++;
    }
+
+   if (solver.input.solver_type == SYNC_JACOBI){
+      solver.input.MsgQ_flag = 0;
+   }
    
    omp_set_num_threads(solver.input.num_threads);
 
+   /* set up problem */
    CSR A;
    if (problem_type == PROBLEM_FILE){
       char A_mat_file_str[128];
@@ -101,7 +104,9 @@ int main (int argc, char *argv[])
          b[i] = RandDouble(-1.0, 1.0);
          x[i] = 0;
       }
+      /* run Jacobi solver */
       Jacobi(&solver, A, b, &x);
+      /* print stats */
       if (verbose_output){
          printf("Rel res. 2-norm %e, Solve wall-clock time %e\n", Residual2Norm(A, x, b), solver.output.solve_wtime);
       }
