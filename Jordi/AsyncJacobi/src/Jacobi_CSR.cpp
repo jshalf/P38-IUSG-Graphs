@@ -2,6 +2,11 @@
 #include "../../src/Matrix.hpp"
 #include "../../src/MsgQ.hpp"
 
+/***************************************************************
+ * Solve for x in Ax=b using synchronous or asynchronous Jacobi.
+ * A is in compressed sparse row (CSR) format.
+ ***************************************************************/
+
 double JacobiRelax(CSR A, double *b, double **x, double *x_prev, int i);
 double AsyncJacobiRelax(CSR A, double *b, double **x, int i);
 double AsyncJacobiRelaxAtomic(CSR A, double *b, double **x, int i);

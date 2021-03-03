@@ -46,9 +46,9 @@ int main (int argc, char *argv[])
             solver.input.solver_type = ASYNC_JACOBI;
          }
       }
-      else if (strcmp(argv[arg_index], "-atomic") == 0){ /* use atomics for async Jacobi */
+      else if (strcmp(argv[arg_index], "-no_atomic") == 0){ /* use atomics for async Jacobi */
          arg_index++;
-         solver.input.atomic_flag = atoi(argv[arg_index]);
+         solver.input.atomic_flag = 0;
       }
       else if (strcmp(argv[arg_index], "-num_runs") == 0){ /* number of separate Jacobi runs */
          arg_index++;

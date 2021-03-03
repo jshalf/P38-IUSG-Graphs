@@ -2,7 +2,10 @@
 #include "../../src/Matrix.hpp"
 #include "../../src/MsgQ.hpp"
 
-/* serial y=Ax routine using CSR matrix format */
+/**************************************************************************
+ * Serial y=A^Tx (combined with y=Ax if specified) where y is unknown.
+ * A is in compressed sparse row (CSR) format.
+ **************************************************************************/
 void MatVec_CSR(MatVecData *mv,
                 CSR A, /* sparse matrix */
                 double *x, /* vector to be mulitplied with A */
@@ -25,7 +28,10 @@ void MatVec_CSR(MatVecData *mv,
    }
 }
 
-/* parallel y=A^Tx (combined with y=Ax if specified) routine using CSR matrix format */
+/**************************************************************************
+ * Parallel y=A^Tx (combined with y=Ax if specified) where y is unknown.
+ * A is in compressed sparse row (CSR) format.
+ **************************************************************************/
 void MatVecT_CSR(MatVecData *mv,
                  CSR A, /* sparse matrix */
                  double *x, /* vector to be mulitplied with A */

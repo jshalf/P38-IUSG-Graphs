@@ -2,11 +2,11 @@
 #include "../../src/Matrix.hpp"
 #include "../../src/MsgQ.hpp"
 
-/* **************************************************
- * MatVecT coordinate format implementation.
- * very similar to CSR impelmentation.
- * see MatVec_CSR.cpp for detailed comments.
- * **************************************************/
+/********************************************************************************
+ * Parallel y=A^Tx (combined with y=Ax if specified) where y is unknown.
+ * A is in cordinate (COO) format.
+ * very similar to CSR impelmentation (see MatVec_CSR.cpp for detailed comments)
+ ********************************************************************************/
 
 void MatVecT_COO(MatVecData *mv,
                  CSR A,
