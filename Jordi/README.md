@@ -2,17 +2,17 @@
 This code contains a collection of benchmarks that test the scalability
 of atomic operations.  While there are different options that can be set
 within each benchamrk, each benchmark includes three important ingredients:
-	1. A baseline method that may not require atomics.
-	2. A method that requires atomics.
-	3. The ability to turn off the atomics in the atomics method in order to measure the performance difference.
+1. A baseline method that may not require atomics.
+2. A method that requires atomics.
+3. The ability to turn off the atomics in the atomics method in order to measure the performance difference.
 In the third case, note that removing atomics may not give the correct result and
 is merely there to measure the potential performance gain if the atomics 
 were not used.
 
 For the sparse linear algebra bechmarks, there are three available test problems:
-	1. The five-point centered difference discretization of the Poisson equation.
-	2. Random symmetric matrix.
-	3. Matrix read from file.
+1. The five-point centered difference discretization of the Poisson equation.
+2. Random symmetric matrix.
+3. Matrix read from file.
 The matrices are stored in either compressed sparse row (CSR) or coordinate format (COO).
 
 # Build
