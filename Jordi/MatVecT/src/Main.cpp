@@ -18,9 +18,30 @@ int main (int argc, char *argv[])
    int problem_type = PROBLEM_5PT_POISSON;
    char mat_file_str[128];
 
+   int print_usage = 0;
    int arg_index = 0;
    while (arg_index < argc){
-      if (strcmp(argv[arg_index], "-n") == 0){ /* ``size'' of matrix. n*n rows for Laplace, n rows otherwise. */
+      if (strcmp(argv[arg_index], "-problem") == 0){ /* test problem */
+         arg_index++;
+         if (strcmp(argv[arg_index], "5pt") == 0){ /* five-point centered-difference Laplace problem*/
+            problem_type = PROBLEM_5PT_POISSON;
+         }
+         else if (strcmp(argv[arg_index], "file") == 0){ /* read matrix from binary file */
+            arg_index++;
+            problem_type = PROBLEM_FILE;
+            strcpy(mat_file_str, argv[arg_index]);
+         }
+      }
+      else if (strcmp(argv[arg_index], "-method") == 0){ /* method */
+         arg_index++;
+         if (strcmp(argv[arg_index], "atomic") == 0){ /* atomic method that treats CSR as CSC */
+            mv.input.expand_flag = 0;
+         }
+         else if (strcmp(argv[arg_index], "expand") == 0){ /* each thread uses a local vector which are summed at the end */
+            mv.input.expand_flag = 1;
+         }
+      }
+      else if (strcmp(argv[arg_index], "-n") == 0){ /* ``size'' of matrix. n*n rows for Laplace, n rows otherwise. */
          arg_index++;
          m = atoi(argv[arg_index]);
       }
@@ -38,9 +59,6 @@ int main (int argc, char *argv[])
       else if (strcmp(argv[arg_index], "-verb_out") == 0){ /* verbose output */
          verbose_output = 1;
       }
-      else if (strcmp(argv[arg_index], "-expand") == 0){ /* ``expand'' MatVecT method */
-         mv.input.expand_flag = 1;
-      }
       else if (strcmp(argv[arg_index], "-AAT") == 0){ /* Compute Ax and A^Tx together */
          mv.input.AAT_flag = 1;
       }
@@ -50,18 +68,31 @@ int main (int argc, char *argv[])
       else if (strcmp(argv[arg_index], "-MsgQ") == 0){ /* use message queues */
          mv.input.MsgQ_flag = 1;
       }
-      else if (strcmp(argv[arg_index], "-problem") == 0){ /* test problem */
-         arg_index++;
-         if (strcmp(argv[arg_index], "5pt") == 0){ /* five-point centered-difference Laplace problem*/
-            problem_type = PROBLEM_5PT_POISSON;
-         }
-         else if (strcmp(argv[arg_index], "file") == 0){ /* read matrix from binary file */
-            arg_index++;
-            problem_type = PROBLEM_FILE;
-            strcpy(mat_file_str, argv[arg_index]);
-         }
+      else if (strcmp(argv[arg_index], "-help") == 0){ /* print command line options */
+         print_usage = 1;
       }
       arg_index++;
+   }
+
+   if (print_usage == 1){
+      printf("\n");
+      printf("-problem <problem_name>:  test problem.\n");
+      printf("      5pt:                five-point centered difference discretization of the Poisson equation.\n");
+      printf("      file:               read matrix from binary file.\n"
+             "                          Must be in (i,j,val) format starting with (num rows, num cols, num nnz) on first line.\n");
+      printf("-method <method_name>:    method for computing y=A^Tx.\n");
+      printf("      atomic:             method that uses atomics.\n");
+      printf("      expand:             baseline method that does not require atomics.\n");
+      printf("-n <int value>:           size of test problem.  For 5pt, this is the length of the 2D grid, i.e., the matrix has n^2 rows.\n");
+      printf("-num_threads <int value>: number of OpenMP threads.\n");
+      printf("-no_atomic:               turn off atomics.  Only meant for performance measurements and will not produce a correct result.\n");
+      printf("-num_runs <int value>:    number of independent runs.  Used for data collection.\n");
+      printf("-verb_out:                verbose output.\n");
+      printf("-AAT:                     compute both A^Tx and Ax together.\n");
+      printf("-coo:                     use coordinate format instead of CSR.\n");
+      printf("-MsgQ:                    use message queues instead of atomics.\n");
+      printf("\n");
+      return 0;
    }
    
    omp_set_num_threads(mv.input.num_threads);

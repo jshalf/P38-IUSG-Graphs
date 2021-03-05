@@ -36,8 +36,32 @@ int main (int argc, char *argv[])
 
    /* command line arguments */
    int arg_index = 0;
+   int print_usage = 0;
    while (arg_index < argc){
-      if (strcmp(argv[arg_index], "-n") == 0){ /* ``size'' of matrix. n*n rows for Laplace, n rows otherwise. */
+      if (strcmp(argv[arg_index], "-problem") == 0){ /* test problem */
+         arg_index++;
+         if (strcmp(argv[arg_index], "5pt") == 0){ /* five-point centered-difference Laplace problem*/
+            problem_type = PROBLEM_5PT_POISSON;
+         }
+         else if (strcmp(argv[arg_index], "rand") == 0){ /* random matrix */
+            problem_type = PROBLEM_RANDOM;
+         }
+         else if (strcmp(argv[arg_index], "file") == 0){ /* read matrix from binary file */
+            arg_index++;
+            problem_type = PROBLEM_FILE;
+            strcpy(mat_file_str, argv[arg_index]);
+         }
+      }
+      else if (strcmp(argv[arg_index], "-solver") == 0){ /* solver type */
+         arg_index++;
+         if (strcmp(argv[arg_index], "async") == 0){ /* asynchronous iterative fine-grained */
+            solver_type = TRISOLVE_ASYNC;
+         }
+         else if (strcmp(argv[arg_index], "lev_sched") == 0){ /* classical level-scheduled */
+            solver_type = TRISOLVE_LEVEL_SCHEDULED;
+         }
+      }
+      else if (strcmp(argv[arg_index], "-n") == 0){ /* ``size'' of matrix. n*n rows for Laplace, n rows otherwise. */
          arg_index++;
          m = atoi(argv[arg_index]);
       }
@@ -55,14 +79,8 @@ int main (int argc, char *argv[])
       else if (strcmp(argv[arg_index], "-verb_out") == 0){ /* verbose output */
          verbose_output = 1;
       }
-      else if (strcmp(argv[arg_index], "-solver") == 0){ /* solver type */
-         arg_index++;
-         if (strcmp(argv[arg_index], "async") == 0){ /* asynchronous iterative fine-grained */
-            solver_type = TRISOLVE_ASYNC;
-         }
-         else if (strcmp(argv[arg_index], "lev_sched") == 0){ /* classical level-scheduled */
-            solver_type = TRISOLVE_LEVEL_SCHEDULED;
-         }
+      else if (strcmp(argv[arg_index], "-MsgQ") == 0){ /* use message queues in async solvers */
+         ts.input.MsgQ_flag = 1;
       }
       else if (strcmp(argv[arg_index], "-mxr_nnz") == 0){ /* max number of non-zeros per row (only used for generating random amtrices) */
          arg_index++;
@@ -74,24 +92,34 @@ int main (int argc, char *argv[])
       else if (strcmp(argv[arg_index], "-omp_for") == 0){ /* use OpenMP for loops in the async solver */
          ts.input.omp_for_flag = 1;
       }
-      else if (strcmp(argv[arg_index], "-problem") == 0){ /* test problem */
-         arg_index++;
-         if (strcmp(argv[arg_index], "5pt") == 0){ /* five-point centered-difference Laplace problem*/
-            problem_type = PROBLEM_5PT_POISSON;
-         }
-         else if (strcmp(argv[arg_index], "rand") == 0){ /* random matrix */
-            problem_type = PROBLEM_RANDOM;
-         }
-         else if (strcmp(argv[arg_index], "file") == 0){ /* read matrix from binary file */
-            arg_index++;
-            problem_type = PROBLEM_FILE;
-            strcpy(mat_file_str, argv[arg_index]);
-         }
-      }
-      else if (strcmp(argv[arg_index], "-MsgQ") == 0){ /* use message queues in async solvers */
-         ts.input.MsgQ_flag = 1;
+      else if (strcmp(argv[arg_index], "-help") == 0){ /* print command line options */
+         print_usage = 1;
       }
       arg_index++;
+   }
+
+   if (print_usage == 1){
+      printf("\n");
+      printf("-problem <problem_name>:  test problem.\n");
+      printf("      5pt:                five-point centered difference discretization of the Poisson equation.\n");
+      printf("      rand:               random sparse matrix.\n");
+      printf("      file:               read matrix from binary file.\n"
+             "                          Must be in (i,j,val) format starting with (num rows, num cols, num nnz) on first line.\n");
+      printf("-solver <solver_name>:    method for solving LUx=b.\n");
+      printf("      lev_sched:          level scheduled method.\n");
+      printf("      async:              asynchronous iterative fine-grained method.\n");
+      printf("-n <int value>:           size of test problem.  For 5pt, this is the length of the 2D grid, i.e., the matrix has n^2 rows.\n");
+      printf("                          for the random matrix, this is the number of rows.\n");
+      printf("-num_threads <int value>: number of OpenMP threads.\n");
+      printf("-no_atomic:               turn off atomics.  Only meant for performance measurements and will not produce a correct result.\n");
+      printf("-num_runs <int value>:    number of independent runs.  Used for data collection.\n");
+      printf("-verb_out:                verbose output.\n");
+      printf("-MsgQ:                    use message queues instead of atomics.\n");
+      printf("-mxr_nnz <int value>:     maximum number of non-zero values per row for the random matrix.\n");
+      printf("-sync:                    use synchronization in the asynchronous method.\n");
+      printf("-omp_for:                 use OpenMP parallel for loops in the asynchronous method.\n");
+      printf("\n");
+      return 0;
    }
 
    int num_rows;

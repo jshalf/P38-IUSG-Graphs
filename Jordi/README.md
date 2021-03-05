@@ -18,6 +18,10 @@ The matrices are stored in either compressed sparse row (CSR) or coordinate form
 # Build
 To build a benchmark, navigate to the benchmark's directory 
 and use make.
+Note that the COMPILE variable must be changed based on the compiler being used.
+Once built, an executabled named Main is created.
+Running the following will print command line options and other udage instructions:
+	./Main -help
 
 # Benchmarks
 ## Atomic
