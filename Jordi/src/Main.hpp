@@ -52,6 +52,7 @@ typedef struct{
    int coo_flag; /* are we using coordinate format? */
    int omp_for_flag; /* are we using OpenMP for loops? */
    int MsgQ_flag; /* Are we using message queues instead of atomics? */
+   int block_size;
 }InputData;
 
 /* Output data */
@@ -60,7 +61,9 @@ typedef struct{
    double setup_wtime; /* setup wall-clock time */
    double *atomic_wtime_vec; /* atomic wall-clock time per thread */
    double *solve_wtime_vec; /* solve wall-clock time per thread */
-   int *num_relax; /* number of relaxations (only used by AsyncJacobi benchmark) */
+   double *setup_wtime_vec;
+   int *num_iters; /* number of iterations */
+   int *num_relax; /* number of relaxations */
 }OutputData;
 
 /* Struct used by MatVecT benchmark */

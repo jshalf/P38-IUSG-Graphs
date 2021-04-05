@@ -91,9 +91,9 @@ double Residual2Norm(CSR A, /* sparse matrix data (input) */
 }
 
 /* Compute level sets for level scheduling algorithms */
-void LevelSets(CSR A, /* matrix data (input) */
-               LevelSetData *lvl_set /* level set data (output) */
-               )
+void LevelSets2(CSR A, /* matrix data (input) */
+                LevelSetData *lvl_set /* level set data (output) */
+                )
 {
    int n = A.n;
    vector<int> nodes(n);
@@ -146,6 +146,62 @@ void LevelSets(CSR A, /* matrix data (input) */
    } 
 
    free(nonzero_flags);
+}
+
+/* Compute level sets for level scheduling algorithms */
+void LevelSets(CSR A, /* matrix data (input) */
+              LevelSetData *lvl_set, /* level set data (output) */
+              int L_flag /* is the matrix lower or upper triangular ? */
+              )
+{
+   int n = A.n;
+   vector<int> depth(n, -1), level_size(n, 0);
+   lvl_set->perm = (int *)calloc(n, sizeof(int));
+   lvl_set->num_levels = 0;
+   /* loop over all nodes to compute depths which are levels */
+   for (int I = 0; I < n; I++){
+      int i;
+      if (L_flag == 1){ 
+         i = I;
+      }
+      else {
+         i = n-I-1;
+      }
+      int max_depth = -1;
+      for (int jj = A.i_ptr[i]; jj < A.i_ptr[i+1]; jj++){
+         int j = A.j[jj];
+         if (max_depth < depth[j]){
+            max_depth = depth[j];
+         }
+      }
+      depth[i] = 1 + max_depth;
+      level_size[depth[i]]++;
+      if (lvl_set->num_levels < depth[i]){
+         lvl_set->num_levels = depth[i];
+      }
+   }
+   lvl_set->num_levels++;
+
+   lvl_set->level_size.resize(lvl_set->num_levels); 
+   lvl_set->level_start.resize(lvl_set->num_levels+1);
+   lvl_set->level_start[0] = 0;
+   /* compute the starting points in ``perm'' of each level set */
+   for (int i = 0; i < lvl_set->num_levels; i++){
+      lvl_set->level_size[i] = level_size[i];
+      lvl_set->level_start[i+1] = lvl_set->level_start[i] + lvl_set->level_size[i];
+   }
+
+   vector<int> level_counts(lvl_set->num_levels, 0);
+   for (int i = 0; i < n; i++){
+      int d = depth[i];
+      lvl_set->perm[lvl_set->level_start[d]+level_counts[d]] = i;
+      level_counts[d]++;
+   }
+}
+
+void LevelSetsDestroy(LevelSetData *lvl_set)
+{
+   free(lvl_set->perm);
 }
 
 /* Functions for computing number of clock cycles */

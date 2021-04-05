@@ -6,8 +6,8 @@
 /* queue data structure */
 typedef struct {
    queue<double> *q; /* std queue */
-   int size; /* size of queue */
-   omp_lock_t lock; /* OpenMP lock */
+   int size = 0; /* size of queue */
+   omp_lock_t *lock; /* OpenMP lock */
 } Queue;
 
 void qInitLock(Queue *Q);

@@ -89,6 +89,7 @@ void RandomMatrix(InputData input, /* input data */
    double low = -1.0/(double)(max_row_nnz);
    double high = 1.0/(double)(max_row_nnz);
 
+   //srand(time(NULL));
    srand(0);
    if (mat_type == MATRIX_LOWER || 
        mat_type == MATRIX_UPPER ||

@@ -23,8 +23,9 @@ int main (int argc, char *argv[])
    ts.input.atomic_flag = 1;
    ts.input.coo_flag = 0;
    ts.input.async_flag = 1;
-   ts.input.omp_for_flag = 0;
+   ts.input.omp_for_flag = 1;
    ts.input.MsgQ_flag = 0;
+   ts.input.block_size = 1;
    int verbose_output = 0;
    int num_runs = 1;
    int m = 10; 
@@ -89,8 +90,12 @@ int main (int argc, char *argv[])
       else if (strcmp(argv[arg_index], "-sync") == 0){ /* make the async solver synchronous */
          ts.input.async_flag = 0;
       }
-      else if (strcmp(argv[arg_index], "-omp_for") == 0){ /* use OpenMP for loops in the async solver */
-         ts.input.omp_for_flag = 1;
+      else if (strcmp(argv[arg_index], "-coo") == 0){ /* use OpenMP for loops in the async solver */
+         ts.input.coo_flag = 1;
+      }
+      else if (strcmp(argv[arg_index], "-block_size") == 0){ /* for async COO solver, specify size of blocks of non-zeros */
+         arg_index++;
+         ts.input.block_size = atoi(argv[arg_index]);
       }
       else if (strcmp(argv[arg_index], "-help") == 0){ /* print command line options */
          print_usage = 1;
@@ -116,8 +121,7 @@ int main (int argc, char *argv[])
       printf("-verb_out:                verbose output.\n");
       printf("-MsgQ:                    use message queues instead of atomics.\n");
       printf("-mxr_nnz <int value>:     maximum number of non-zero values per row for the random matrix.\n");
-      printf("-sync:                    use synchronization in the asynchronous method.\n");
-      printf("-omp_for:                 use OpenMP parallel for loops in the asynchronous method.\n");
+      printf("-coo:                     use coordinate (COO) format isntead of CSR.\n");
       printf("\n");
       return 0;
    }
@@ -145,11 +149,12 @@ int main (int argc, char *argv[])
    //PrintCOO(A, A_filename);
    if (problem_type == PROBLEM_FILE){
       char L_mat_file_str[128];
-      char U_mat_file_str[128];
       sprintf(L_mat_file_str, "%s_L.txt.bin", mat_file_str);
-      sprintf(U_mat_file_str, "%s_U.txt.bin", mat_file_str);
       freadBinaryMatrix(L_mat_file_str, &L, 0);
-      freadBinaryMatrix(U_mat_file_str, &U, 0);
+
+      //char U_mat_file_str[128];
+      //sprintf(U_mat_file_str, "%s_U.txt.bin", mat_file_str);
+      //freadBinaryMatrix(U_mat_file_str, &U, 0);
 
       //char L_outfile[128];
       //char U_outfile[128];
@@ -160,24 +165,25 @@ int main (int argc, char *argv[])
    }
    else { 
       RandomMatrix(ts.input, &L, m, max_row_nnz, MATRIX_LOWER);
-      RandomMatrix(ts.input, &U, m, max_row_nnz, MATRIX_UPPER);
+      //RandomMatrix(ts.input, &U, m, max_row_nnz, MATRIX_UPPER);
    }
+
+   num_rows = L.n;
    
    ts.output.setup_wtime = 0.0;
    /* set up for level scheduling method */
    if (solver_type == TRISOLVE_LEVEL_SCHEDULED){
-      start = omp_get_wtime();
-      LevelSets(L, &(ts.L_lvl_set));
-      LevelSets(U, &(ts.U_lvl_set));
-      ts.output.setup_wtime = omp_get_wtime() - start;
+     // start = omp_get_wtime();
+     // LevelSets(L, &(ts.L_lvl_set), 1);
+     // //LevelSets(U, &(ts.U_lvl_set), 0);
+     // ts.output.setup_wtime = omp_get_wtime() - start;
    }
-   num_rows = L.n;
    /* set up stuff for serial solver */
    int *L_perm = (int *)calloc(num_rows, sizeof(int));
-   int *U_perm = (int *)calloc(num_rows, sizeof(int));
+   //int *U_perm = (int *)calloc(num_rows, sizeof(int));
    for (int i = 0; i < num_rows; i++){
       L_perm[i] = i;
-      U_perm[i] = num_rows - (i+1);
+      //U_perm[i] = num_rows - (i+1);
    }
 
 //   char L_filename[100], U_filename[100], A_filename[100];
@@ -190,78 +196,96 @@ int main (int argc, char *argv[])
 
    double *x = (double *)calloc(num_rows, sizeof(double));
    double *x_exact = (double *)calloc(num_rows, sizeof(double));
-   double *y = (double *)calloc(num_rows, sizeof(double));
-   double *y_exact = (double *)calloc(num_rows, sizeof(double));
    double *e_x = (double *)calloc(num_rows, sizeof(double));
-   double *e_y = (double *)calloc(num_rows, sizeof(double));
+
    double *b = (double *)calloc(num_rows, sizeof(double));
    srand(0);
    for (int i = 0; i < num_rows; i++){
       b[i] = 1.0;//RandDouble(-1.0, 1.0);
    }
 
-   ts.output.atomic_wtime_vec = (double *)calloc(ts.input.num_threads, sizeof(double));
+   ts.output.setup_wtime_vec = (double *)calloc(ts.input.num_threads, sizeof(double));
    ts.output.solve_wtime_vec = (double *)calloc(ts.input.num_threads, sizeof(double));
    ts.output.num_relax = (int *)calloc(ts.input.num_threads, sizeof(int));
+   ts.output.num_iters = (int *)calloc(ts.input.num_threads, sizeof(int));
+
+   double seq_start = omp_get_wtime();
+   TriSolve_CSR(&ts, L, L_perm, x_exact, b); 
+   double seq_wtime = omp_get_wtime() - seq_start;
 
    for (int run = 1; run <= num_runs; run++){
-      for (int i = 0; i < num_rows; i++){
-         x[i] = 0;
-         y[i] = 0;
-         x_exact[i] = 0;
-         y_exact[i] = 0;
-      } 
       for (int t = 0; t < ts.input.num_threads; t++){
-         ts.output.atomic_wtime_vec[t] = 0.0;
          ts.output.solve_wtime_vec[t] = 0.0;
+         ts.output.setup_wtime_vec[t] = 0.0;
          ts.output.num_relax[t] = 0;
+         ts.output.num_iters[t] = 0;
       }
       /* serial solver first */
-      TriSolve_CSR(&ts, L, U, L_perm, U_perm, x_exact, y_exact, b);
+      //TriSolve_CSR(&ts, L, L_perm, x_exact, b);
+     
 
       /* parallel solver */
-      if (solver_type == TRISOLVE_LEVEL_SCHEDULED){
+      if (solver_type == TRISOLVE_LEVEL_SCHEDULED){ /* level-scheduled solver */
          start = omp_get_wtime();
-         TriSolve_LevelSets_CSR(&ts, L, U, x, y, b);
-         ts.output.solve_wtime = omp_get_wtime() - start;
-         for (int t = 0; t < ts.input.num_threads; t++){
-            ts.output.num_relax[t] = ts.L_lvl_set.num_levels + ts.U_lvl_set.num_levels;
+         LevelSets(L, &(ts.L_lvl_set), 1);
+         //LevelSets(U, &(ts.U_lvl_set), 0);
+         ts.output.setup_wtime = omp_get_wtime() - start;
+
+         TriSolve_LevelSets_CSR(&ts, ts.L_lvl_set, L, x, b);
+
+         LevelSetsDestroy(&(ts.L_lvl_set));
+      }
+      else { /* asynchronoues solver */
+         if (ts.input.coo_flag == 1){
+            TriSolve_Async_COO(&ts, L, x, b);
          }
+         else {
+            TriSolve_Async_CSR(&ts, L, x, b);
+         }
+         double setup_wtime_sum = SumDouble(ts.output.setup_wtime_vec, ts.input.num_threads);
+         ts.output.setup_wtime = setup_wtime_sum / (double)ts.input.num_threads;
       }
-      else {
-         TriSolve_FineGrained_COO(&ts, L, U, x, y, b);
-         double solve_wtime_sum = SumDouble(ts.output.solve_wtime_vec, ts.input.num_threads);
-         ts.output.solve_wtime = solve_wtime_sum / (double)ts.input.num_threads;
-      }
+
+      double solve_wtime_sum = SumDouble(ts.output.solve_wtime_vec, ts.input.num_threads);
+      ts.output.solve_wtime = solve_wtime_sum / (double)ts.input.num_threads;
 
       /* compute the error between the serial and parallel solvers */
       for (int i = 0; i < num_rows; i++){
          e_x[i] = x_exact[i] - x[i];
-         e_y[i] = y_exact[i] - y[i];
-         //printf("%e %e\n", y_exact[i], y[i]);
+         //printf("%e %e\n", x_exact[i], x[i]);
       }
       double error_x = sqrt(InnerProd(e_x, e_x, num_rows))/sqrt(InnerProd(x_exact, x_exact, num_rows));
-      double error_y = sqrt(InnerProd(e_y, e_y, num_rows))/sqrt(InnerProd(y_exact, y_exact, num_rows));
-      double atomic_wtime_sum = SumDouble(ts.output.atomic_wtime_vec, ts.input.num_threads);
       int num_relax_sum = SumInt(ts.output.num_relax, ts.input.num_threads);
+      int num_iters_sum = SumInt(ts.output.num_iters, ts.input.num_threads);
       /* print output stats */
       if (verbose_output){
-         printf("Solve wall-clock time = %e\nSetup wall-clock time = %e\nAtomics wall-clock time = %e\nL solve forward-error L2-norm = %e\nU solve forward-error L2-norm = %e\nmean relaxations = %f\n",
-                 ts.output.solve_wtime, ts.output.setup_wtime, atomic_wtime_sum/(double)ts.input.num_threads, error_x, error_y, (double)num_relax_sum/(double)ts.input.num_threads);
+         printf("Solve wall-clock time = %e\n"
+                "Setup wall-clock time = %e\n"
+                "Sequential solver wall-clock time = %e\n"
+                "Solve forward-error L2-norm = %e\n"
+                "Mean relaxations = %f\nMean iterations = %f\n",
+                ts.output.solve_wtime,
+                ts.output.setup_wtime,
+                seq_wtime,
+                error_x,
+                (double)num_relax_sum/(double)ts.input.num_threads,
+                (double)num_iters_sum/(double)ts.input.num_threads);
       }
       else {
-         printf("%e %e %e %e %e %f\n",
-                ts.output.solve_wtime, ts.output.setup_wtime, atomic_wtime_sum/(double)ts.input.num_threads, error_x, error_y, (double)num_relax_sum/(double)ts.input.num_threads);
+         printf("%e %e %e %e %f %f\n",
+                ts.output.solve_wtime,
+                ts.output.setup_wtime,
+                seq_wtime,
+                error_x,
+                (double)num_relax_sum/(double)ts.input.num_threads,
+                (double)num_iters_sum/(double)ts.input.num_threads);
       }
    }
 
    free(x);
    free(x_exact);
-   free(y);
-   free(y_exact);
    free(b);
    free(e_x);
-   free(e_y);
 
    return 0;
 }

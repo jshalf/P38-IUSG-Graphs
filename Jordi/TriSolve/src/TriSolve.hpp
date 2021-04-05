@@ -7,27 +7,26 @@
 #define TRISOLVE_OMPFOR_SCHED static
 
 void TriSolve_CSR(TriSolveData *ts,
-                  CSR L,
-                  CSR U,
-                  int *L_perm,
-                  int *U_perm,
+                  CSR T,
+                  int *T_perm,
                   double *x,
-                  double *y,
                   double *b);
 
 void TriSolve_LevelSets_CSR(TriSolveData *ts,
-                            CSR L,
-                            CSR U,
+                            LevelSetData lvl_set,
+                            CSR T,
                             double *x,
-                            double *y,
                             double *b);
 
-void TriSolve_FineGrained_COO(TriSolveData *ts,
-                              CSR L,
-                              CSR U,
-                              double *x,
-                              double *y,
-                              double *b);
+void TriSolve_Async_COO(TriSolveData *ts,
+                        CSR T,
+                        double *x,
+                        double *b);
+
+void TriSolve_Async_CSR(TriSolveData *ts,
+                        CSR T,
+                        double *x,
+                        double *b);
 
 
 #endif

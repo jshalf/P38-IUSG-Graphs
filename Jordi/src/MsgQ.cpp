@@ -4,13 +4,17 @@
 /* initialize mutex lock */
 void qInitLock(Queue *Q)
 {
-   omp_init_lock(&(Q->lock));
+   for (int i = 0; i < Q->size; i++){
+      omp_init_lock(&(Q->lock[i]));
+   }
 }
 
 /* destroy mutex lock */
 void qDestroyLock(Queue *Q)
 {
-   omp_destroy_lock(&(Q->lock));
+   for (int i = 0; i < Q->size; i++){
+      omp_destroy_lock(&(Q->lock[i]));
+   }
 }
 
 /* initialize queue data */
@@ -20,6 +24,7 @@ void qAlloc(Queue *Q,
 {
    Q->size = n;
    Q->q = new queue<double>[Q->size];
+   Q->lock = (omp_lock_t *)malloc(Q->size * sizeof(omp_lock_t));
 }
 
 /* free queue data */
@@ -36,11 +41,11 @@ void qPut(Queue *Q,
 {
    int i = destinationQID;
 
-   omp_set_lock(&(Q->lock)); /* acquire lock */
+   omp_set_lock(&(Q->lock[i])); /* acquire lock */
 
    Q->q[i].push(sourceData); /* push to queue */
 
-   omp_unset_lock(&(Q->lock)); /* release lock */
+   omp_unset_lock(&(Q->lock[i])); /* release lock */
 }
 
 int qPoll(Queue *Q,
@@ -52,15 +57,17 @@ int qPoll(Queue *Q,
    int i = destinationQID;
    double x;
     
-   omp_set_lock(&(Q->lock)); /* acquire lock */
+   //omp_set_lock(&(Q->lock[i])); /* acquire lock */
 
-   if (!(Q->q[i].empty())){ /* if the queue is empty, return zero flag */
-      /* if queue is not empty, get front and flag of one */
-      *destinationData = Q->q[i].front();
-      flag = 1;
+   if (omp_test_lock(&(Q->lock[i]))){
+      if (!(Q->q[i].empty())){ /* if the queue is empty, return zero flag */
+         /* if queue is not empty, get front and flag of one */
+         *destinationData = Q->q[i].front();
+         flag = 1;
+      }
+
+      omp_unset_lock(&(Q->lock[i])); /* release lock */
    }
-
-   omp_unset_lock(&(Q->lock)); /* release lock */
 
    return flag;
 }
@@ -90,16 +97,18 @@ int qGet(Queue *Q,
    double x;
    int flag = 0;
 
-   omp_set_lock(&(Q->lock)); /* acquire lock */
+   //omp_set_lock(&(Q->lock[i])); /* acquire lock */
 
-   if (!(Q->q[i].empty())){ /* if the queue is empty, return zero flag */
-      /* if queue is not empty, pop front and flag of one */
-      *destinationData = Q->q[i].front();
-      Q->q[i].pop(); /* pop front */
-      flag = 1;
+   if (omp_test_lock(&(Q->lock[i]))){
+      if (!(Q->q[i].empty())){ /* if the queue is empty, return zero flag */
+         /* if queue is not empty, pop front and flag of one */
+         *destinationData = Q->q[i].front();
+         Q->q[i].pop(); /* pop front */
+         flag = 1;
+      }
+
+      omp_unset_lock(&(Q->lock[i])); /* release lock */
    }
-
-   omp_unset_lock(&(Q->lock)); /* release lock */
 
    return flag;
 }
