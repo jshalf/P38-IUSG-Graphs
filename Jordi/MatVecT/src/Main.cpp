@@ -34,7 +34,7 @@ int main (int argc, char *argv[])
       }
       else if (strcmp(argv[arg_index], "-method") == 0){ /* method */
          arg_index++;
-         if (strcmp(argv[arg_index], "atomic") == 0){ /* atomic method that treats CSR as CSC */
+         if (strcmp(argv[arg_index], "atomic") == 0){ /* atomic method that treats Matrix as CSC */
             mv.input.expand_flag = 0;
          }
          else if (strcmp(argv[arg_index], "expand") == 0){ /* each thread uses a local vector which are summed at the end */
@@ -89,7 +89,7 @@ int main (int argc, char *argv[])
       printf("-num_runs <int value>:    number of independent runs.  Used for data collection.\n");
       printf("-verb_out:                verbose output.\n");
       printf("-AAT:                     compute both A^Tx and Ax together.\n");
-      printf("-coo:                     use coordinate format instead of CSR.\n");
+      printf("-coo:                     use coordinate format instead of Matrix.\n");
       printf("-MsgQ:                    use message queues instead of atomics.\n");
       printf("\n");
       return 0;
@@ -98,7 +98,7 @@ int main (int argc, char *argv[])
    omp_set_num_threads(mv.input.num_threads);
 
    /* set up problem */
-   CSR A;
+   Matrix A;
    if (problem_type == PROBLEM_FILE){
       char A_mat_file_str[128];
       sprintf(A_mat_file_str, "%s_A.txt.bin", mat_file_str);

@@ -15,22 +15,35 @@
 
 /* CSR struct */
 typedef struct{
-   int *i_ptr; /* pointer to row starts (only used in CSR algorithms) */
-   int *i; /* row indices (only used in COO algorithms) */
-   int *j; /* columns indices */
+   int *start; /* pointer to row starts */
+   int *i; /* columns indices (used in COO and CSC) */
+   int *j; /* row indices (used in COO and CSR) */
    double *data; /* matrix values */
    double *diag; /* diagonal elements */
    int n; /* number of rows */
    int m; /* number of columns */
    int nnz; /* number of non-zero values */
-}CSR;
+}Matrix;
 
-void Laplace_2D_5pt(InputData input, CSR *A, int n);
+void Laplace_2D_5pt(InputData input, Matrix *A, int n);
 
-void RandomMatrix(InputData input, CSR *A, int n, int max_row_nnz, int mat_type);
+void RandomMatrix(InputData input,
+                  Matrix *A,
+                  int n,
+                  int max_row_nnz,
+                  int mat_type,
+                  int csc_flag,
+                  int coo_flag);
 
-void PrintCOO(CSR A, char *filename, int print_diag_flag);
+void PrintMatrix(Matrix A,
+                 char *filename,
+                 int print_diag_flag,
+                 int csc_flag);
 
-void freadBinaryMatrix(char *mat_file_str, CSR *A, int include_diag_flag);
+void freadBinaryMatrix(char *mat_file_str,
+                       Matrix *A,
+                       int include_diag_flag,
+                       int csc_flag,
+                       int coo_flag);
 
 #endif

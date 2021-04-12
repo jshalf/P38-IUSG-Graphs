@@ -66,7 +66,7 @@ double SumDouble(double *x, int n)
 }
 
 /* Residual L2-norm using OpenMP reduction */
-double Residual2Norm(CSR A, /* sparse matrix data (input) */
+double Residual2Norm(Matrix A, /* sparse matrix data (input) */
                      double *x, /* solution (input) */
                      double *b /* right-hand side (input) */
                      )
@@ -77,7 +77,7 @@ double Residual2Norm(CSR A, /* sparse matrix data (input) */
    for (int i = 0; i < n; i++){
       /* compute residual inner product */
       double res = b[i];
-      for (int jj = A.i_ptr[i]; jj < A.i_ptr[i+1]; jj++)
+      for (int jj = A.start[i]; jj < A.start[i+1]; jj++)
       {
          int ii = A.j[jj];
          res -= A.data[jj] * x[ii];
@@ -91,67 +91,10 @@ double Residual2Norm(CSR A, /* sparse matrix data (input) */
 }
 
 /* Compute level sets for level scheduling algorithms */
-void LevelSets2(CSR A, /* matrix data (input) */
-                LevelSetData *lvl_set /* level set data (output) */
-                )
-{
-   int n = A.n;
-   vector<int> nodes(n);
-   vector<int>::iterator it;
-   lvl_set->perm = (int *)calloc(n, sizeof(int));
-   int *nonzero_flags = (int *)calloc(n, sizeof(int));
-   int *nonzero_flags_prev = (int *)calloc(n, sizeof(int));
-
-   for (int i = 0; i < n; i++){
-      nonzero_flags[i] = 1;
-      nodes[i] = i;
-   }
-
-   int k = 0;
-   /* loop until all nodes have been eliminated, i.e., until all nodes have been placed in a level set */
-   while(nodes.size() > 0){
-      int level_size = 0;
-      for (int i = 0; i < n; i++){
-         nonzero_flags_prev[i] = nonzero_flags[i];
-      }
-      /* loop over nodes to find roots */
-      for(it = nodes.begin(); it != nodes.end(); it++){
-         int i = *it;
-         int root_flag = 1;
-         /* if all nodes connected to node ``i'' have been eliminated, ``i'' is a root */
-         for (int jj = A.i_ptr[i]; jj < A.i_ptr[i+1]; jj++){
-            if (nonzero_flags_prev[A.j[jj]] == 1){
-               root_flag = 0;
-               break;
-            }
-         }
-         /* if ``i'' is a root, include it in current level set and remove it from list of nodes */ 
-         if (root_flag == 1){
-            nonzero_flags[i] = 0;
-            lvl_set->perm[k] = i;
-            k++;
-            level_size++;
-            nodes.erase(it--);
-         }
-      }
-      lvl_set->level_size.push_back(level_size);
-   }
-
-   lvl_set->num_levels = lvl_set->level_size.size();
-   lvl_set->level_start.resize(lvl_set->num_levels+1);
-   lvl_set->level_start[0] = 0;
-   /* compute the starting points in ``perm'' of each level set */
-   for (int i = 0; i < lvl_set->num_levels; i++){
-      lvl_set->level_start[i+1] = lvl_set->level_start[i] + lvl_set->level_size[i];
-   } 
-
-   free(nonzero_flags);
-}
-
-/* Compute level sets for level scheduling algorithms */
-void LevelSets(CSR A, /* matrix data (input) */
+void LevelSets(Matrix A, /* matrix data (input) */
               LevelSetData *lvl_set, /* level set data (output) */
-              int L_flag /* is the matrix lower or upper triangular ? */
+              int L_flag, /* is the matrix lower or upper triangular ? */
+              int csc_flag /* is the matrix in CSC format? */
               )
 {
    int n = A.n;
@@ -168,7 +111,7 @@ void LevelSets(CSR A, /* matrix data (input) */
          i = n-I-1;
       }
       int max_depth = -1;
-      for (int jj = A.i_ptr[i]; jj < A.i_ptr[i+1]; jj++){
+      for (int jj = A.start[i]; jj < A.start[i+1]; jj++){
          int j = A.j[jj];
          if (max_depth < depth[j]){
             max_depth = depth[j];

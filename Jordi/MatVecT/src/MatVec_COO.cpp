@@ -5,11 +5,11 @@
 /********************************************************************************
  * Parallel y=A^Tx (combined with y=Ax if specified) where y is unknown.
  * A is in cordinate (COO) format.
- * very similar to CSR impelmentation (see MatVec_CSR.cpp for detailed comments)
+ * very similar to Matrix impelmentation (see MatVec_Matrix.cpp for detailed comments)
  ********************************************************************************/
 
 void MatVecT_COO(MatVecData *mv,
-                 CSR A,
+                 Matrix A,
                  double *x,
                  double *y1,
                  double *y2)

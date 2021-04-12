@@ -4,10 +4,10 @@
 
 /**************************************************************************
  * Serial y=A^Tx (combined with y=Ax if specified) where y is unknown.
- * A is in compressed sparse row (CSR) format.
+ * A is in compressed sparse row (Matrix) format.
  **************************************************************************/
 void MatVec_CSR(MatVecData *mv,
-                CSR A, /* sparse matrix */
+                Matrix A, /* sparse matrix */
                 double *x, /* vector to be mulitplied with A */
                 double *y /* result of Ax */
                 )
@@ -20,7 +20,7 @@ void MatVec_CSR(MatVecData *mv,
       #pragma omp for
       for (int i = 0; i < num_rows; i++){
          Axi = 0.0;
-         for (int jj = A.i_ptr[i]; jj < A.i_ptr[i+1]; jj++){
+         for (int jj = A.start[i]; jj < A.start[i+1]; jj++){
             Axi += A.data[jj] * x[A.j[jj]];
          }
          y[i] = Axi;
@@ -30,10 +30,10 @@ void MatVec_CSR(MatVecData *mv,
 
 /**************************************************************************
  * Parallel y=A^Tx (combined with y=Ax if specified) where y is unknown.
- * A is in compressed sparse row (CSR) format.
+ * A is in compressed sparse row (Matrix) format.
  **************************************************************************/
 void MatVecT_CSR(MatVecData *mv,
-                 CSR A, /* sparse matrix */
+                 Matrix A, /* sparse matrix */
                  double *x, /* vector to be mulitplied with A */
                  double *y1, /* result of A^Tx */
                  double *y2 /* result of Ax */
@@ -69,7 +69,7 @@ void MatVecT_CSR(MatVecData *mv,
          if (mv->input.MsgQ_flag == 1){ /* use message queues */
             #pragma omp for nowait
             for (int i = 0; i < num_rows; i++){
-               for (int jj = A.i_ptr[i]; jj < A.i_ptr[i+1]; jj++){
+               for (int jj = A.start[i]; jj < A.start[i+1]; jj++){
                   double z;
                   /* compute update for element i of y1*/
                   z = A.data[jj] * x[i];
@@ -103,7 +103,7 @@ void MatVecT_CSR(MatVecData *mv,
              * the local verions are then summed to get the desired results. */
             #pragma omp for
             for (int i = 0; i < num_rows; i++){
-               for (int jj = A.i_ptr[i]; jj < A.i_ptr[i+1]; jj++){
+               for (int jj = A.start[i]; jj < A.start[i+1]; jj++){
                   mv->y1_expand[j_offset + A.j[jj]] += A.data[jj] * x[i]; /* update local version of y1 */
                   y2[i] += A.data[jj] * x[A.j[jj]];
                }
@@ -123,7 +123,7 @@ void MatVecT_CSR(MatVecData *mv,
          else if (mv->input.atomic_flag == 1){ /* atomic version */
             #pragma omp for nowait
             for (int i = 0; i < num_rows; i++){
-               for (int jj = A.i_ptr[i]; jj < A.i_ptr[i+1]; jj++){
+               for (int jj = A.start[i]; jj < A.start[i+1]; jj++){
                   /* atomically accumulate element A.j[jj] of y1 */
                   #pragma omp atomic
                   y1[A.j[jj]] += A.data[jj] * x[i];
@@ -137,7 +137,7 @@ void MatVecT_CSR(MatVecData *mv,
                  * (for performance analysis, will not give correct result) */
             #pragma omp for nowait
             for (int i = 0; i < num_rows; i++){
-               for (int jj = A.i_ptr[i]; jj < A.i_ptr[i+1]; jj++){
+               for (int jj = A.start[i]; jj < A.start[i+1]; jj++){
                   y1[A.j[jj]] += A.data[jj] * x[i];
                   y2[i] += A.data[jj] * x[A.j[jj]];
                }
@@ -148,7 +148,7 @@ void MatVecT_CSR(MatVecData *mv,
          if (mv->input.MsgQ_flag == 1){
             #pragma omp for nowait
             for (int i = 0; i < num_rows; i++){
-               for (int jj = A.i_ptr[i]; jj < A.i_ptr[i+1]; jj++){
+               for (int jj = A.start[i]; jj < A.start[i+1]; jj++){
                   double z;
                   z = A.data[jj] * x[i];
                   qPut(&Q, A.j[jj], z);
@@ -170,7 +170,7 @@ void MatVecT_CSR(MatVecData *mv,
          else if (mv->input.expand_flag == 1){
             #pragma omp for
             for (int i = 0; i < num_rows; i++){
-               for (int jj = A.i_ptr[i]; jj < A.i_ptr[i+1]; jj++){
+               for (int jj = A.start[i]; jj < A.start[i+1]; jj++){
                   mv->y1_expand[j_offset + A.j[jj]] += A.data[jj] * x[i];
                }
             }
@@ -188,7 +188,7 @@ void MatVecT_CSR(MatVecData *mv,
          else if (mv->input.atomic_flag == 1){
             #pragma omp for nowait
             for (int i = 0; i < num_rows; i++){
-               for (int jj = A.i_ptr[i]; jj < A.i_ptr[i+1]; jj++){
+               for (int jj = A.start[i]; jj < A.start[i+1]; jj++){
                   #pragma omp atomic
                   y1[A.j[jj]] += A.data[jj] * x[i];
                }
@@ -197,7 +197,7 @@ void MatVecT_CSR(MatVecData *mv,
          else {
             #pragma omp for nowait
             for (int i = 0; i < num_rows; i++){
-               for (int jj = A.i_ptr[i]; jj < A.i_ptr[i+1]; jj++){
+               for (int jj = A.start[i]; jj < A.start[i+1]; jj++){
                   y1[A.j[jj]] += A.data[jj] * x[i];
                }
             }

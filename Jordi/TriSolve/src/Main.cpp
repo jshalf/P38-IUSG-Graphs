@@ -9,12 +9,6 @@
 
 using namespace std;
 
-//TODO: fix SuperLU stuff
-#ifdef USE_SUPERLU
-void SuperLU_MT_Setup(CSR A, SuperMatrix *A_slu, SuperMatrix *B_slu, SuperMatrix *L_slu, SuperMatrix *U_slu, SuperMatrix *AA_slu, SuperMatrix *AC_slu, double *b, int num_threads);
-void Print_SuperMatrix(SuperMatrix A_slu, CSR *A);
-#endif
-
 int main (int argc, char *argv[])
 {
    /* set defaults */
@@ -26,12 +20,14 @@ int main (int argc, char *argv[])
    ts.input.omp_for_flag = 1;
    ts.input.MsgQ_flag = 0;
    ts.input.block_size = 1;
+   ts.input.fine_grained_flag = 0;
+   ts.input.mat_storage_type = MATRIX_STORAGE_CSR;
    int verbose_output = 0;
    int num_runs = 1;
    int m = 10; 
    int max_row_nnz = 3;
    int solver_type = TRISOLVE_ASYNC;
-   int problem_type = PROBLEM_5PT_POISSON;
+   int problem_type = PROBLEM_RANDOM;
    double start;
    char mat_file_str[128];
 
@@ -55,7 +51,7 @@ int main (int argc, char *argv[])
       }
       else if (strcmp(argv[arg_index], "-solver") == 0){ /* solver type */
          arg_index++;
-         if (strcmp(argv[arg_index], "async") == 0){ /* asynchronous iterative fine-grained */
+         if (strcmp(argv[arg_index], "async") == 0){ /* asynchronous */
             solver_type = TRISOLVE_ASYNC;
          }
          else if (strcmp(argv[arg_index], "lev_sched") == 0){ /* classical level-scheduled */
@@ -90,12 +86,17 @@ int main (int argc, char *argv[])
       else if (strcmp(argv[arg_index], "-sync") == 0){ /* make the async solver synchronous */
          ts.input.async_flag = 0;
       }
-      else if (strcmp(argv[arg_index], "-coo") == 0){ /* use OpenMP for loops in the async solver */
-         ts.input.coo_flag = 1;
-      }
-      else if (strcmp(argv[arg_index], "-block_size") == 0){ /* for async COO solver, specify size of blocks of non-zeros */
+      else if (strcmp(argv[arg_index], "-sp_store_type") == 0){ /* matrix storage type */
          arg_index++;
-         ts.input.block_size = atoi(argv[arg_index]);
+         if (strcmp(argv[arg_index], "csr") == 0){ /* compressed sparse row */
+            ts.input.mat_storage_type = MATRIX_STORAGE_CSR;
+         }
+         else if (strcmp(argv[arg_index], "csc") == 0){ /* compressed sparse column */
+            ts.input.mat_storage_type = MATRIX_STORAGE_CSC;
+         }
+      }
+      else if (strcmp(argv[arg_index], "-fine_grained") == 0){ /* use fine grained solver */
+         ts.input.fine_grained_flag = 1;
       }
       else if (strcmp(argv[arg_index], "-help") == 0){ /* print command line options */
          print_usage = 1;
@@ -112,7 +113,7 @@ int main (int argc, char *argv[])
              "                          Must be in (i,j,val) format starting with (num rows, num cols, num nnz) on first line.\n");
       printf("-solver <solver_name>:    method for solving LUx=b.\n");
       printf("      lev_sched:          level scheduled method.\n");
-      printf("      async:              asynchronous iterative fine-grained method.\n");
+      printf("      async:              asynchronous method.\n");
       printf("-n <int value>:           size of test problem.  For 5pt, this is the length of the 2D grid, i.e., the matrix has n^2 rows.\n");
       printf("                          for the random matrix, this is the number of rows.\n");
       printf("-num_threads <int value>: number of OpenMP threads.\n");
@@ -121,7 +122,6 @@ int main (int argc, char *argv[])
       printf("-verb_out:                verbose output.\n");
       printf("-MsgQ:                    use message queues instead of atomics.\n");
       printf("-mxr_nnz <int value>:     maximum number of non-zero values per row for the random matrix.\n");
-      printf("-coo:                     use coordinate (COO) format isntead of CSR.\n");
       printf("\n");
       return 0;
    }
@@ -130,43 +130,38 @@ int main (int argc, char *argv[])
    
    omp_set_num_threads(ts.input.num_threads);
 
+   if (solver_type == TRISOLVE_LEVEL_SCHEDULED){
+      ts.input.mat_storage_type = MATRIX_STORAGE_CSR;
+   }
+
+   int csc_flag = 0, coo_flag = 0;
+   if (ts.input.mat_storage_type == MATRIX_STORAGE_CSC){
+      csc_flag = 1;
+   }
+
    /* set up problem (TODO: add 5pt problem) */
-   CSR A, L, U;
+   Matrix A, L, U;
    //Laplace_2D_5pt(ts.input, &A, m);
-   //num_rows = A.n;
-   //double *b = (double *)calloc(num_rows, sizeof(double));
-   //srand(0);
-   //for (int i = 0; i < num_rows; i++){
-   //   b[i] = 1.0;//RandDouble(-1.0, 1.0);
-   //}   
 
-   //SuperMatrix *A_slu, B_slu, L_slu, U_slu, *AA_slu, AC_slu;
-   //SuperLU_MT_Setup(A, A_slu, &B_slu, &L_slu, &U_slu, AA_slu, &AC_slu, b, ts.input.num_threads);
-
-   //Print_SuperMatrix(L_slu, &L);
-   //char A_filename[100];
-   //sprintf(A_filename, "./matlab/A.txt");
-   //PrintCOO(A, A_filename);
    if (problem_type == PROBLEM_FILE){
       char L_mat_file_str[128];
       sprintf(L_mat_file_str, "%s_L.txt.bin", mat_file_str);
-      freadBinaryMatrix(L_mat_file_str, &L, 0);
-
-      //char U_mat_file_str[128];
-      //sprintf(U_mat_file_str, "%s_U.txt.bin", mat_file_str);
-      //freadBinaryMatrix(U_mat_file_str, &U, 0);
-
-      //char L_outfile[128];
-      //char U_outfile[128];
-      //sprintf(L_outfile, "./matlab/L.txt");
-      //sprintf(U_outfile, "./matlab/U.txt");
-      //PrintCOO(L, L_outfile, 0);
-      //PrintCOO(U, U_outfile, 0);
+      freadBinaryMatrix(L_mat_file_str, &L, 0, csc_flag, coo_flag);
    }
    else { 
-      RandomMatrix(ts.input, &L, m, max_row_nnz, MATRIX_LOWER);
+      RandomMatrix(ts.input, &L, m, max_row_nnz, MATRIX_LOWER, csc_flag, coo_flag);
       //RandomMatrix(ts.input, &U, m, max_row_nnz, MATRIX_UPPER);
    }
+
+  // char L_outfile[128];
+  // if (csc_flag == 1){
+  //    sprintf(L_outfile, "./matlab/L_csc.txt");
+  // }
+  // else {
+  //    sprintf(L_outfile, "./matlab/L_csr.txt");
+  // }
+  // PrintMatrix(L, L_outfile, 1, csc_flag);
+
 
    num_rows = L.n;
    
@@ -174,8 +169,8 @@ int main (int argc, char *argv[])
    /* set up for level scheduling method */
    if (solver_type == TRISOLVE_LEVEL_SCHEDULED){
      // start = omp_get_wtime();
-     // LevelSets(L, &(ts.L_lvl_set), 1);
-     // //LevelSets(U, &(ts.U_lvl_set), 0);
+     // LevelSchedule(L, &(ts.L_lvl_set), 1);
+     // //LevelSchedule(U, &(ts.U_lvl_set), 0);
      // ts.output.setup_wtime = omp_get_wtime() - start;
    }
    /* set up stuff for serial solver */
@@ -185,14 +180,6 @@ int main (int argc, char *argv[])
       L_perm[i] = i;
       //U_perm[i] = num_rows - (i+1);
    }
-
-//   char L_filename[100], U_filename[100], A_filename[100];
-//   sprintf(L_filename, "./matlab/L.txt");
-//   sprintf(U_filename, "./matlab/U.txt");
-//   //sprintf(A_filename, "./matlab/A.txt");
-//   PrintCOO(L, L_filename);
-//   PrintCOO(U, U_filename);
-//   //PrintCOO(A, A_filename);
 
    double *x = (double *)calloc(num_rows, sizeof(double));
    double *x_exact = (double *)calloc(num_rows, sizeof(double));
@@ -210,7 +197,7 @@ int main (int argc, char *argv[])
    ts.output.num_iters = (int *)calloc(ts.input.num_threads, sizeof(int));
 
    double seq_start = omp_get_wtime();
-   TriSolve_CSR(&ts, L, L_perm, x_exact, b); 
+   TriSolve_Seq(&ts, L, L_perm, x_exact, b); 
    double seq_wtime = omp_get_wtime() - seq_start;
 
    for (int run = 1; run <= num_runs; run++){
@@ -227,21 +214,16 @@ int main (int argc, char *argv[])
       /* parallel solver */
       if (solver_type == TRISOLVE_LEVEL_SCHEDULED){ /* level-scheduled solver */
          start = omp_get_wtime();
-         LevelSets(L, &(ts.L_lvl_set), 1);
-         //LevelSets(U, &(ts.U_lvl_set), 0);
+         LevelSets(L, &(ts.L_lvl_set), 1, csc_flag);
+         //LevelSchedule(U, &(ts.U_lvl_set), 0);
          ts.output.setup_wtime = omp_get_wtime() - start;
 
-         TriSolve_LevelSets_CSR(&ts, ts.L_lvl_set, L, x, b);
+         TriSolve_LevelSchedule(&ts, ts.L_lvl_set, L, x, b);
 
          LevelSetsDestroy(&(ts.L_lvl_set));
       }
       else { /* asynchronoues solver */
-         if (ts.input.coo_flag == 1){
-            TriSolve_Async_COO(&ts, L, x, b);
-         }
-         else {
-            TriSolve_Async_CSR(&ts, L, x, b);
-         }
+         TriSolve_Async(&ts, L, x, b);
          double setup_wtime_sum = SumDouble(ts.output.setup_wtime_vec, ts.input.num_threads);
          ts.output.setup_wtime = setup_wtime_sum / (double)ts.input.num_threads;
       }
@@ -289,76 +271,3 @@ int main (int argc, char *argv[])
 
    return 0;
 }
-
-#ifdef USE_SUPERLU
-void SuperLU_MT_Setup(CSR A, SuperMatrix *A_slu, SuperMatrix *B_slu, SuperMatrix *L_slu, SuperMatrix *U_slu, SuperMatrix *AA_slu, SuperMatrix *AC_slu, double *b, int num_threads)
-{
-   A_slu = (SuperMatrix *)SUPERLU_MALLOC(sizeof(SuperMatrix));
-   //double *at;
-   //int *rowind, *colptr;
-   //dCompRow_to_CompCol(A.n, A.n, A.nnz, A.data, A.j, A.i_ptr, &at, &rowind, &colptr);
-   dCreate_CompCol_Matrix(A_slu, A.n, A.n, A.nnz, A.data, A.j, A.i_ptr, SLU_NC, SLU_D, SLU_GE);
-   int nrhs = 1;
-   dCreate_Dense_Matrix(B_slu, A.n, nrhs, b, A.n, SLU_DN, SLU_S, SLU_GE);
-   int_t *perm_r, *perm_c;
-   perm_r = intMalloc(A.n);
-   perm_c = intMalloc(A.n);
-   int_t info;
-   int_t permc_spec = 0;
-   get_perm_c(permc_spec, A_slu, perm_c);
-   superlumt_options_t superlumt_options;
-   Gstat_t Gstat;
-   int nprocs = num_threads;
-   fact_t fact = DOFACT;
-   yes_no_t refact = NO;
-   trans_t trans = NOTRANS;
-   int_t panel_size = 1;//sp_ienv(1);
-   int_t relax = sp_ienv(2);
-   double diag_pivot_thresh = 1.0;
-   yes_no_t usepr = NO;
-   double drop_tol = 0.0;
-   void *work = NULL;
-   int_t lwork = 0;
-
-   //pdgssv(1, &A_slu, perm_c, perm_r, &L_slu, &U_slu, &B_slu, &info);
-   StatAlloc(A.n, nprocs, panel_size, relax, &Gstat);
-   StatInit(A.n, nprocs, &Gstat);
-   if (A_slu->Stype == SLU_NR){
-      NRformat *Astore = (NRformat *)A_slu->Store;
-      AA_slu = (SuperMatrix *)SUPERLU_MALLOC(sizeof(SuperMatrix));
-      dCreate_CompCol_Matrix(AA_slu, A_slu->ncol, A_slu->nrow, Astore->nnz,
-                             (double *)Astore->nzval, Astore->colind, Astore->rowptr,
-                             SLU_NC, A_slu->Dtype, A_slu->Mtype);
-   }
-   else if (A_slu->Stype == SLU_NC){
-      AA_slu = A_slu;
-   }
-   pdgstrf_init(nprocs, fact, trans, refact, panel_size, relax,
-                diag_pivot_thresh, usepr, drop_tol, perm_c, perm_r,
-                work, lwork, AA_slu, AC_slu, &superlumt_options, &Gstat);
-   pdgstrf(&superlumt_options, AC_slu, perm_r, L_slu, U_slu, &Gstat, &info);
-   dgstrs(trans, L_slu, U_slu, perm_r, perm_c, B_slu, &Gstat, &info);
-}
-
-void Print_SuperMatrix(SuperMatrix A_slu, CSR *A)
-{
-   if (A_slu.Stype == SLU_SCP){
-      SCPformat *Astore = (SCPformat *)A_slu.Store;
-      vector<vector<int>> colind_vec(A_slu.nrow, vector<int>());
-      vector<vector<double>> nzval_vec(A_slu.nrow, vector<double>());
-      double *nzval = (double *)Astore->nzval;
-      for (int k = 0; k <= Astore->nsuper; ++k) {
-         int c = Astore->sup_to_colbeg[k];
-         int nsup = Astore->sup_to_colend[k] - c;
-         for (int j = c; j < c + nsup; j++) {
-           int d = Astore->nzval_colbeg[j];
-           for (int i = Astore->rowind_colbeg[c]; i < Astore->rowind_colend[c+1]; i++) {
-              printf("%d %d %e\n", Astore->rowind[i], j, nzval[d++]);
-           }
-         }
-      } 
-   }
-   else if (A_slu.Stype == SLU_NR){
-   }
-}
-#endif

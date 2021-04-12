@@ -11,6 +11,16 @@
 #define SYNC_BLOCK_JACOBI  2
 #define ASYNC_BLOCK_JACOBI 3
 
+#define MATRIX_STORAGE_CSR 0
+#define MATRIX_STORAGE_CSC 1
+#define MATRIX_STORAGE_COO 2
+#define MATRIX_STORAGE_DENSE 3
+
+#define MATRIX_STORAGE_CSR 0
+#define MATRIX_STORAGE_CSC 1
+#define MATRIX_STORAGE_COO 2
+#define MATRIX_STORAGE_DENSE 3
+
 /* types of solvers used in the TriSolve benchmark */
 #define TRISOLVE_ASYNC 0
 #define TRISOLVE_LEVEL_SCHEDULED 1
@@ -49,10 +59,13 @@ typedef struct{
    int atomic_flag; /* is solver using atomics? */
    int AAT_flag; /* will both the sparse matrix-vector and sparse matrix-transpose-vector products both be computed? (only used in MatVecT benchmark) */
    int expand_flag; /* will the ``expand''scheme be used? (only used in MatVecT benchmark) */
-   int coo_flag; /* are we using coordinate format? */
    int omp_for_flag; /* are we using OpenMP for loops? */
    int MsgQ_flag; /* Are we using message queues instead of atomics? */
    int block_size;
+   int hybrid_async_flag;
+   int mat_storage_type;
+   int coo_flag;
+   int fine_grained_flag;
 }InputData;
 
 /* Output data */

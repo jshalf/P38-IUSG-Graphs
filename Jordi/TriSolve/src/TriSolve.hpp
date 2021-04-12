@@ -6,27 +6,27 @@
 
 #define TRISOLVE_OMPFOR_SCHED static
 
-void TriSolve_CSR(TriSolveData *ts,
-                  CSR T,
+void TriSolve_Seq(TriSolveData *ts,
+                  Matrix T,
                   int *T_perm,
                   double *x,
                   double *b);
 
-void TriSolve_LevelSets_CSR(TriSolveData *ts,
+void TriSolve_LevelSchedule(TriSolveData *ts,
                             LevelSetData lvl_set,
-                            CSR T,
+                            Matrix T,
                             double *x,
                             double *b);
 
 void TriSolve_Async_COO(TriSolveData *ts,
-                        CSR T,
+                        Matrix T,
                         double *x,
                         double *b);
 
-void TriSolve_Async_CSR(TriSolveData *ts,
-                        CSR T,
-                        double *x,
-                        double *b);
+void TriSolve_Async(TriSolveData *ts,
+                    Matrix T,
+                    double *x,
+                    double *b);
 
 
 #endif

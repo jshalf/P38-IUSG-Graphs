@@ -9,7 +9,7 @@ using namespace std;
 
 /* five-point centered difference discretization of the Laplace equation */
 void Laplace_2D_5pt(InputData input, /* input data */
-                    CSR *A, /* sparse matrix data (output) */
+                    Matrix *A, /* sparse matrix data (output) */
                     int n /* size of grid (n*n rows) */
                     )
 {
@@ -19,7 +19,7 @@ void Laplace_2D_5pt(InputData input, /* input data */
    A->n = N;
    A->m = N;
    A->nnz = 5*n*n - 4*n;
-   A->i_ptr = (int *)calloc(N+1, sizeof(int));
+   A->start = (int *)calloc(N+1, sizeof(int));
    A->j = (int *)calloc(A->nnz, sizeof(int));
    A->data = (double *)calloc(A->nnz, sizeof(double));
    A->diag = (double *)calloc(A->n, sizeof(double));
@@ -27,7 +27,7 @@ void Laplace_2D_5pt(InputData input, /* input data */
    int block_end = n-1;
    int block_start = 0;
    int k = 0;
-   A->i_ptr[0] = 0;
+   A->start[0] = 0;
    for(int i = 0; i < N; i++){
       A->diag[i] = 4.0;
       col = i - n;
@@ -57,7 +57,7 @@ void Laplace_2D_5pt(InputData input, /* input data */
          A->j[k] = col;
          k++;
       }
-      A->i_ptr[i+1] = k;
+      A->start[i+1] = k;
 
       if (i == block_end){
          block_end += n;
@@ -69,7 +69,7 @@ void Laplace_2D_5pt(InputData input, /* input data */
       A->i = (int *)calloc(A->nnz, sizeof(int));
       k = 0;
       for (int i = 0; i < A->n; i++){
-         for (int jj = A->i_ptr[i]; jj < A->i_ptr[i+1]; jj++){
+         for (int jj = A->start[i]; jj < A->start[i+1]; jj++){
             A->i[k] = i;
             k++;
          }
@@ -79,10 +79,12 @@ void Laplace_2D_5pt(InputData input, /* input data */
 
 /* Generate a random sparse matrix */
 void RandomMatrix(InputData input, /* input data */
-                  CSR *A, /* matrix data (output) */
+                  Matrix *A, /* matrix data (output) */
                   int n, /* number of rows */
                   int max_row_nnz, /* maximum number of non-zeros per row */ 
-                  int mat_type /* matrix type can be symmetric, lower triangular, or upper triangular */
+                  int mat_type, /* matrix type can be symmetric, lower triangular, or upper triangular */
+                  int csc_flag,
+                  int coo_flag
                   )
 {
    A->diag = (double *)calloc(n, sizeof(double));
@@ -115,21 +117,21 @@ void RandomMatrix(InputData input, /* input data */
          //nzval[i].push_back(RandDouble(-1.0, 1.0));
          //nnz++;
          while(count < row_nnz){
-            int col;
+            int j;
             if (mat_type == MATRIX_LOWER){
-               col = (int)RandInt(0, i, time(NULL));
+               j = (int)RandInt(0, i, time(NULL));
             }
             else if (mat_type == MATRIX_UPPER){
-               col = (int)RandInt(i, n-1, time(NULL));
+               j = (int)RandInt(i, n-1, time(NULL));
             }
             else {
-               col = (int)RandInt(0, n-1, time(NULL));
+               j = (int)RandInt(0, n-1, time(NULL));
             }
             vector<int>::iterator it;
 
-            it = find(rows[i].begin(), rows[i].end(), col);
-            if (it == rows[i].end() && i != col){
-               rows[i].push_back(col);
+            it = find(rows[i].begin(), rows[i].end(), j);
+            if (it == rows[i].end() && i != j){
+               rows[i].push_back(j);
                nzval[i].push_back(RandDouble(0.0, high));
                count++;
                nnz++;
@@ -140,26 +142,73 @@ void RandomMatrix(InputData input, /* input data */
       A->nnz = nnz;
       A->n = n;
       A->m = n;
-      A->i = (int *)calloc(nnz, sizeof(int));
-      A->j = (int *)calloc(nnz, sizeof(int));
-      A->data = (double *)calloc(nnz, sizeof(double));
-      A->i_ptr = (int *)calloc(n+1, sizeof(int));
-      int k = 0;
-      A->i_ptr[0] = 0;
+      if (csc_flag == 1 || coo_flag == 1){
+         A->i = (int *)calloc(A->nnz, sizeof(int));
+      }
+      if (csc_flag == 0 || coo_flag == 1){
+         A->j = (int *)calloc(A->nnz, sizeof(int));
+      }
+      A->data = (double *)calloc(A->nnz, sizeof(double));
+      A->start = (int *)calloc(A->n+1, sizeof(int));
+
+      vector<int> counts(A->n, 0);
+
       for (int i = 0; i < n; i++){
-         A->i_ptr[i+1] = A->i_ptr[i] + rows[i].size();
-         for (int jj = 0; jj < rows[i].size(); jj++){
-            A->i[k] = i;
-            A->j[k] = rows[i][jj];
-            A->data[k] = nzval[i][jj];
-            k++;
+         for (int k = 0; k < rows[i].size(); k++){
+            int row = i;
+            int col = rows[i][k];
+            int idx;
+            if (csc_flag == 1){
+               idx = col;
+            }
+            else {
+               idx = row;
+            }
+            counts[idx]++;
+         }
+      }
+
+      for (int idx = 0; idx < A->n; idx++){
+         A->start[idx+1] = A->start[idx] + counts[idx];
+         counts[idx] = 0;
+      }
+
+      for (int i = 0; i < n; i++){
+         for (int k = 0; k < rows[i].size(); k++){
+            int row = i;
+            int col = rows[i][k];
+            double elem = nzval[i][k];
+
+            int idx;
+            if (csc_flag == 1){
+               idx = col;
+            }
+            else {
+               idx = row;
+            }
+            int kk = A->start[idx] + counts[idx];
+            counts[idx]++;
+
+            if (coo_flag == 1){
+               A->i[kk] = row;
+               A->j[kk] = col;
+            }
+            else {
+               if (csc_flag == 1){
+                  A->i[kk] = row;
+               }
+               else {
+                  A->j[kk] = col;
+               }
+            }
+            A->data[kk] = elem;
          }
       }
    }
 }
 
 /* print coordinate format of sparse matrix */
-void PrintCOO(CSR A, char *filename, int print_diag_flag)
+void PrintMatrix(Matrix A, char *filename, int print_diag_flag, int csc_flag)
 {
    FILE *file = fopen(filename, "w");
    
@@ -168,14 +217,34 @@ void PrintCOO(CSR A, char *filename, int print_diag_flag)
          fprintf(file, "%d %d %.15e\n", i+1, i+1, A.diag[i]);
       }
    }
-   for (int k = 0; k < A.nnz; k++){
-      fprintf(file, "%d %d %.15e\n", A.i[k]+1, A.j[k]+1, A.data[k]);
+   if (csc_flag == 1){
+      for (int j = 0; j < A.n; j++){
+         for (int kk = A.start[j]; kk < A.start[j+1]; kk++){
+            int row = A.i[kk]+1;
+            int col = j+1;
+            fprintf(file, "%d %d %.15e\n", row, col, A.data[kk]);
+         }
+      }
    }
+   else {
+      for (int i = 0; i < A.n; i++){
+         for (int kk = A.start[i]; kk < A.start[i+1]; kk++){
+            int row = i+1;
+            int col = A.j[kk]+1;
+            fprintf(file, "%d %d %.15e\n", row, col, A.data[kk]);
+         }
+      }
+   }
+   
    fclose(file);
 }
 
 /* read matrix from binary file. matrix entries must be ordered by increasing row index then increasing column index */
-void freadBinaryMatrix(char *mat_file_str, CSR *A, int include_diag_flag)
+void freadBinaryMatrix(char *mat_file_str,
+                       Matrix *A,
+                       int include_diag_flag,
+                       int csc_flag,
+                       int coo_flag)
 {
    size_t size;
    int temp_size;
@@ -200,43 +269,84 @@ void freadBinaryMatrix(char *mat_file_str, CSR *A, int include_diag_flag)
       A->nnz -= A->n;
    }
 
-   vector<int> row_counts(A->n, 0);
+   vector<int> counts(A->n, 0);
 
-   A->i = (int *)calloc(A->nnz, sizeof(int));
-   A->j = (int *)calloc(A->nnz, sizeof(int));
+   if (csc_flag == 1 || coo_flag == 1){
+      A->i = (int *)calloc(A->nnz, sizeof(int));
+   }
+   if (csc_flag == 0 || coo_flag == 1){
+      A->j = (int *)calloc(A->nnz, sizeof(int));
+   }
    A->data = (double *)calloc(A->nnz, sizeof(double));
-   A->i_ptr = (int *)calloc(A->n+1, sizeof(int));
+   A->start = (int *)calloc(A->n+1, sizeof(int));
    A->diag = (double *)calloc(A->n, sizeof(double));
 
-   vector<int> row_nnz(A->n, 0);
+   for (int k = 1; k < file_lines; k++){
+      int row = buffer[k].i-1;
+      int col = buffer[k].j-1;
+      
+      int include_elem_flag = 1;
+      if (row == col){
+         if (include_diag_flag == 0){
+            include_elem_flag = 0;
+         }
+      }
 
-   int kk = 0;
-   int kk_diag = 0;
+      if (include_elem_flag == 1){
+         int idx;
+         if (csc_flag == 1){
+            idx = col;
+         }
+         else {
+            idx = row;
+         }
+         counts[idx]++;
+      }
+   }
+
+   for (int idx = 0; idx < A->n; idx++){
+      A->start[idx+1] = A->start[idx] + counts[idx];
+      counts[idx] = 0;
+   }
+
    for (int k = 1; k < file_lines; k++){
       int row = buffer[k].i-1;
       int col = buffer[k].j-1;
       double elem = buffer[k].val;
-      
-      int include_row_flag = 1;
+    
+ 
+      int include_elem_flag = 1;
       if (row == col){
-         A->diag[kk_diag] = elem;
-         kk_diag++;
+         A->diag[row] = elem;
          if (include_diag_flag == 0){
-            include_row_flag = 0;
+            include_elem_flag = 0;
          }
       }
-      
-      if (include_row_flag == 1) {   
-         A->i[kk] = row;
-         A->j[kk] = col;
+     
+      if (include_elem_flag == 1) {   
+         int kk, idx;
+         if (csc_flag == 1){
+            idx = col;
+         }
+         else {
+            idx = row;
+         }
+         kk = A->start[idx] + counts[idx];
+         counts[idx]++;
+         if (coo_flag == 1){
+            A->i[kk] = row;
+            A->j[kk] = col; 
+         }
+         else {
+            if (csc_flag == 1){
+               A->i[kk] = row;
+            }
+            else {
+               A->j[kk] = col;
+            }
+         }
          A->data[kk] = elem;
-         row_nnz[row]++;
-         kk++;
       }
-   }
-
-   for (int i = 0; i < A->n; i++){
-      A->i_ptr[i+1] = A->i_ptr[i] + row_nnz[i];
    }
 
    fclose(mat_file);

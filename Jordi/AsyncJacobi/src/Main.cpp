@@ -105,7 +105,7 @@ int main (int argc, char *argv[])
    omp_set_num_threads(solver.input.num_threads);
 
    /* set up problem */
-   CSR A;
+   Matrix A;
    if (problem_type == PROBLEM_FILE){
       char A_mat_file_str[128];
       sprintf(A_mat_file_str, "%s_A.txt.bin", mat_file_str);
