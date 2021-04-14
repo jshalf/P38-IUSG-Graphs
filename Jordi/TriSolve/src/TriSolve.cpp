@@ -2,9 +2,9 @@
 #include "../../src/Matrix.hpp"
 #include "../../src/MsgQ.hpp"
 
-/********************************************************************************
- * Serial TriSolve (sparse matrix must be in compressed sparse row (Matrix) format) 
- ********************************************************************************/
+/******************
+ * Serial TriSolve 
+ ******************/
 void TriSolve_Seq(TriSolveData *ts,
                   Matrix T, /* triangular matrix */
                   int *T_perm, /* ordering for computing elements of x */
@@ -36,9 +36,9 @@ void TriSolve_Seq(TriSolveData *ts,
    }
 }
 
-/******************************************************************************************
- * Level-scheduled TriSolve (sparse matrix must be in compressed sparse row (Matrix) format) 
- ******************************************************************************************/
+/****************************
+ * Level-scheduled TriSolve 
+ ****************************/
 void TriSolve_LevelSchedule(TriSolveData *ts,
                             LevelSetData lvl_set, /* level set data */
                             Matrix T, /* triangular matrix */
@@ -94,9 +94,9 @@ void TriSolve_LevelSchedule(TriSolveData *ts,
    }
 }
 
-/********************************************************************************
- * Async TriSolve (sparse matrix must be in compressed sparse row (Matrix) format) 
- ********************************************************************************/
+/******************
+ * Async TriSolve  
+ ******************/
 void TriSolve_Async(TriSolveData *ts,
                     Matrix T, /* triangular matrix */
                     double *x, /* solution (output) */
@@ -112,18 +112,15 @@ void TriSolve_Async(TriSolveData *ts,
    vector<vector<int>> nnz_put_targets(n), col_put_targets(n);
    
    Queue Q;
-   /* set up message queues */
-   if (ts->input.MsgQ_flag == 1 || ts->input.hybrid_async_flag == 1){
+   /* set up message queue data */
+   if (ts->input.MsgQ_flag == 1){
       for (int i = 0; i < n; i++){
-         //for (int jj = T.start[i]; jj < T.start[i+1]; jj++){
-         for (int jj = T.start[i+1]-1; jj >= T.start[i]; jj--){
+         for (int jj = T.start[i]; jj < T.start[i+1]; jj++){
             int j = T.j[jj];
             nnz_put_targets[j].push_back(jj); /* put targets correspond to non-zeros in this row */
             col_put_targets[j].push_back(i);
          }
       }
-   }
-   if (ts->input.MsgQ_flag == 1){
       q_size = nnz;
       qAlloc(&Q, q_size);
       qInitLock(&Q);
@@ -170,6 +167,7 @@ void TriSolve_Async(TriSolveData *ts,
          }
       }
 
+      /* for fine-grained solvers, store non-zero indices for this thread*/
       if (ts->input.fine_grained_flag == 1){
          my_nzs = (int *)calloc(nnz_loc+1, sizeof(int));
          kk = 0;
@@ -181,12 +179,12 @@ void TriSolve_Async(TriSolveData *ts,
          my_nzs[kk] = nnz;
       }
 
-      /* compute row counts (number of non-zeros per row) and other data */
+      /* compute row counts (number of non-zeros per row) and other data.
+       * atomics are required for computing row counts in the csc case. */
       i_loc = 0;
       jj_loc = 0;
       if (ts->input.MsgQ_flag == 1){
          row_counts_loc = (int *)calloc(n_loc, sizeof(int));
-
          #pragma omp for schedule(static, lump) nowait
          for (int i = 0; i < n; i++){
             int jj_low = T.start[i];
@@ -246,9 +244,9 @@ void TriSolve_Async(TriSolveData *ts,
       i_loc = 0;
 
 
-         /*********************************
-          * message queues implementation
-          *********************************/
+      /*********************************
+       * message queues implementation
+       *********************************/
       if (ts->input.MsgQ_flag == 1){
          #pragma omp for schedule(static, lump) nowait
          for (int i = 0; i < n; i++){
@@ -289,14 +287,15 @@ void TriSolve_Async(TriSolveData *ts,
        * atomics implementations
        *************************/
       else {
-         if (ts->input.mat_storage_type == MATRIX_STORAGE_CSC){
-            if (ts->input.fine_grained_flag == 1){
+         if (ts->input.mat_storage_type == MATRIX_STORAGE_CSC){ /* compressed sparse column (CSC) version */
+            if (ts->input.fine_grained_flag == 1){ /* fine-grained version */
                kk = 0;
-               for (int j = 0; j < n; j++){
+               for (int j = 0; j < n; j++){ /* loop over rows */
                   k = my_nzs[kk];
                   int k_end = T.start[j+1];
-                  if (k < k_end){
+                  if (k < k_end){ /* does this thread own non-zeros for this row? */
                      int row_counts_j;
+                     /* stay idle until element j of x is ready to be used */
                      do {
                         if (atomic_flag == 1){
                            #pragma omp atomic read
@@ -307,6 +306,7 @@ void TriSolve_Async(TriSolveData *ts,
                         }
                      } while (row_counts_j > 0);
                      double xj = x[j];
+                     /* for row j, update elements of x and row_counts */
                      while (k < k_end){
                         int i = T.i[k];
                         double Tij = T.data[k];
@@ -319,6 +319,7 @@ void TriSolve_Async(TriSolveData *ts,
                         else {
                            x[i] -= xj * (Tij / Tii);
                         }
+
                         #pragma omp atomic
                         row_counts[i]--;
 
@@ -332,8 +333,9 @@ void TriSolve_Async(TriSolveData *ts,
             }
             else {
                #pragma omp for schedule(static, lump) nowait
-               for (int j = 0; j < n; j++){
+               for (int j = 0; j < n; j++){ /* loop over rows */
                   int row_counts_j;
+                  /* stay idle until element j of x is ready to be used */
                   do {
                      if (atomic_flag == 1){
                         #pragma omp atomic read
@@ -343,6 +345,7 @@ void TriSolve_Async(TriSolveData *ts,
                         row_counts_j = row_counts[j];
                      }
                   } while (row_counts_j > 0);
+                  /* for row j, update elements of x and row_counts */
                   x[j] /= T.diag[j];
                   double xj = x[j];
                   for (int kk = T.start[j]; kk < T.start[j+1]; kk++){
@@ -354,6 +357,7 @@ void TriSolve_Async(TriSolveData *ts,
                      else {
                         x[i] -= T.data[kk] * xj;
                      }
+
                      #pragma omp atomic
                      row_counts[i]--;
 
@@ -362,15 +366,15 @@ void TriSolve_Async(TriSolveData *ts,
                }
             }
          }
-         else {
-            if (ts->input.fine_grained_flag == 1){
+         else { /* compressed sparse column (CSR) version */
+            if (ts->input.fine_grained_flag == 1){ /* fine-grained version */
                kk = 0;
-               for (int i = 0; i < n; i++){
+               for (int i = 0; i < n; i++){ /* loop over rows */
                   k = my_nzs[kk];
                   int kk_start = kk;
                   int done_flag;
                   int k_end = T.start[i+1];
-                  if (k < k_end){
+                  if (k < k_end){ /* does this thread own non-zeros for this row? */
                      double Tii = T.diag[i];
                      do{
                         kk = kk_start;
@@ -380,7 +384,7 @@ void TriSolve_Async(TriSolveData *ts,
                            if (nz_done_flags_loc[kk] == 0){ /* has this non-zero been used? */
                               int j = T.j[k];
                               int row_counts_j;
-                              /* check if x[j] is available */
+                              /* check if x[j] is available (row_counts[j] must be zero) */
                               if (atomic_flag == 1){
                                  #pragma omp atomic read
                                  row_counts_j = row_counts[j];
@@ -388,11 +392,12 @@ void TriSolve_Async(TriSolveData *ts,
                               else {
                                  row_counts_j = row_counts[j];
                               }
+                              
+                              /* if x[j] is available, update x[i] and row_counts[i] */
                               if (row_counts_j == 0){
                                  double Tij = T.data[k];
                                  double xj = x[j];
                                
-                                 /* update x and row counts for i */
                                  if (atomic_flag == 1){
                                     #pragma omp atomic
                                     x[i] -= xj * Tij / Tii;
@@ -421,7 +426,7 @@ void TriSolve_Async(TriSolveData *ts,
             } 
             else {
                #pragma omp for schedule(static, lump) nowait
-               for (int i = 0; i < n; i++){
+               for (int i = 0; i < n; i++){ /* loop over rows */
                   int jj_start = T.start[i];
                   int jj_end = T.start[i+1];
                   int jj_diff = jj_end - jj_start;
@@ -431,7 +436,7 @@ void TriSolve_Async(TriSolveData *ts,
                         if (nz_done_flags_loc[jj_loc_temp] == 0){ /* has this non-zero been used? */
                            int j = T.j[jj];
                            int row_counts_j;
-                           /* check if x[j] is available */
+                           /* check if x[j] is available (row_counts[j] must be zero) */
                            if (atomic_flag == 1){
                               #pragma omp atomic read
                               row_counts_j = row_counts[j];
@@ -439,8 +444,8 @@ void TriSolve_Async(TriSolveData *ts,
                            else {
                               row_counts_j = row_counts[j];
                            }
+                           /* if x[j] is available, update x[i] and row_counts[i] */
                            if (row_counts_j == -1){
-                              /* update x and row counts for i */
                               x[i] -= T.data[jj] * x[j];
 
                               num_relax++;

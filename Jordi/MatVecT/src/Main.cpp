@@ -102,7 +102,7 @@ int main (int argc, char *argv[])
    if (problem_type == PROBLEM_FILE){
       char A_mat_file_str[128];
       sprintf(A_mat_file_str, "%s_A.txt.bin", mat_file_str);
-      freadBinaryMatrix(A_mat_file_str, &A, 1);
+      freadBinaryMatrix(A_mat_file_str, &A, 1, 0, 1);
 
       //char A_outfile[128];
       //sprintf(A_outfile, "./matlab/A.txt");

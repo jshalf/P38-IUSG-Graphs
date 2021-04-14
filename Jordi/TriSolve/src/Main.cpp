@@ -106,12 +106,12 @@ int main (int argc, char *argv[])
 
    if (print_usage == 1){
       printf("\n");
-      printf("-problem <problem_name>:  test problem.\n");
+      printf("-problem <string>:  test problem.\n");
       printf("      5pt:                five-point centered difference discretization of the Poisson equation.\n");
       printf("      rand:               random sparse matrix.\n");
       printf("      file:               read matrix from binary file.\n"
              "                          Must be in (i,j,val) format starting with (num rows, num cols, num nnz) on first line.\n");
-      printf("-solver <solver_name>:    method for solving LUx=b.\n");
+      printf("-solver <string>:    method for solving LUx=b.\n");
       printf("      lev_sched:          level scheduled method.\n");
       printf("      async:              asynchronous method.\n");
       printf("-n <int value>:           size of test problem.  For 5pt, this is the length of the 2D grid, i.e., the matrix has n^2 rows.\n");
@@ -122,6 +122,10 @@ int main (int argc, char *argv[])
       printf("-verb_out:                verbose output.\n");
       printf("-MsgQ:                    use message queues instead of atomics.\n");
       printf("-mxr_nnz <int value>:     maximum number of non-zero values per row for the random matrix.\n");
+      printf("-sp_store_type <string>:  type of sparse matrix storage.\n");
+      printf("      csr:          compressed sparse row.\n");
+      printf("      csc:          compressed sparse column.\n");
+      printf("-fine_grained:            fine-grained version of asynchronous solver.\n");
       printf("\n");
       return 0;
    }
@@ -196,6 +200,7 @@ int main (int argc, char *argv[])
    ts.output.num_relax = (int *)calloc(ts.input.num_threads, sizeof(int));
    ts.output.num_iters = (int *)calloc(ts.input.num_threads, sizeof(int));
 
+   /* serial solver first */
    double seq_start = omp_get_wtime();
    TriSolve_Seq(&ts, L, L_perm, x_exact, b); 
    double seq_wtime = omp_get_wtime() - seq_start;
@@ -207,7 +212,7 @@ int main (int argc, char *argv[])
          ts.output.num_relax[t] = 0;
          ts.output.num_iters[t] = 0;
       }
-      /* serial solver first */
+
       //TriSolve_CSR(&ts, L, L_perm, x_exact, b);
      
 
