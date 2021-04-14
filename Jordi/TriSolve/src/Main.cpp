@@ -134,10 +134,6 @@ int main (int argc, char *argv[])
    
    omp_set_num_threads(ts.input.num_threads);
 
-   if (solver_type == TRISOLVE_LEVEL_SCHEDULED){
-      ts.input.mat_storage_type = MATRIX_STORAGE_CSR;
-   }
-
    int csc_flag = 0, coo_flag = 0;
    if (ts.input.mat_storage_type == MATRIX_STORAGE_CSC){
       csc_flag = 1;

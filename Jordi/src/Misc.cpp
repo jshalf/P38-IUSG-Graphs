@@ -110,14 +110,26 @@ void LevelSets(Matrix A, /* matrix data (input) */
       else {
          i = n-I-1;
       }
-      int max_depth = -1;
-      for (int jj = A.start[i]; jj < A.start[i+1]; jj++){
-         int j = A.j[jj];
-         if (max_depth < depth[j]){
-            max_depth = depth[j];
+      int max_depth;
+      
+      if (csc_flag == 1){
+         depth[i]++;
+         for (int kk = A.start[i]; kk < A.start[i+1]; kk++){
+            int j = A.i[kk];
+            depth[j] = max(depth[j], depth[i]);
          }
       }
-      depth[i] = 1 + max_depth;
+      else {
+         int max_depth = -1;
+         for (int kk = A.start[i]; kk < A.start[i+1]; kk++){
+            int j = A.j[kk];
+            if (max_depth < depth[j]){
+               max_depth = depth[j];
+            }
+         }
+         depth[i] = 1 + max_depth;
+      }
+
       level_size[depth[i]]++;
       if (lvl_set->num_levels < depth[i]){
          lvl_set->num_levels = depth[i];

@@ -114,13 +114,6 @@ void TriSolve_Async(TriSolveData *ts,
    Queue Q;
    /* set up message queue data */
    if (ts->input.MsgQ_flag == 1){
-      for (int i = 0; i < n; i++){
-         for (int jj = T.start[i]; jj < T.start[i+1]; jj++){
-            int j = T.j[jj];
-            nnz_put_targets[j].push_back(jj); /* put targets correspond to non-zeros in this row */
-            col_put_targets[j].push_back(i);
-         }
-      }
       q_size = nnz;
       qAlloc(&Q, q_size);
       qInitLock(&Q);
@@ -133,7 +126,7 @@ void TriSolve_Async(TriSolveData *ts,
    #pragma omp parallel
    {
       Matrix T_loc;
-      int i_loc, jj_loc, n_loc, nnz_loc, i_prev, i_loc_prev;
+      int i_loc, j_loc, jj_loc, n_loc, nnz_loc, i_prev, i_loc_prev;
       int kk, k;
       double solve_start, setup_start;
       int tid = omp_get_thread_num();
@@ -183,42 +176,29 @@ void TriSolve_Async(TriSolveData *ts,
        * atomics are required for computing row counts in the csc case. */
       i_loc = 0;
       jj_loc = 0;
-      if (ts->input.MsgQ_flag == 1){
-         row_counts_loc = (int *)calloc(n_loc, sizeof(int));
+      if (ts->input.mat_storage_type == MATRIX_STORAGE_CSC){
+         #pragma omp for schedule(static, lump) nowait
+         for (int k = 0; k < nnz; k++){
+            #pragma omp atomic
+            row_counts[T.i[k]]++;
+         }
+      }
+      else {
+         nz_done_flags_loc = (int *)calloc(nnz_loc, sizeof(int));
+         if (ts->input.fine_grained_flag == 0){
+            row_done_flags_loc = (int *)calloc(n_loc, sizeof(int));
+         }
          #pragma omp for schedule(static, lump) nowait
          for (int i = 0; i < n; i++){
             int jj_low = T.start[i];
             int jj_high = T.start[i+1];
 
-            row_counts_loc[i_loc] = jj_high - jj_low;
+            row_counts[i] = jj_high - jj_low;
+            if (row_counts[i] == 0 && ts->input.fine_grained_flag == 0){
+               row_done_flags_loc[i_loc] = 1;
+            }
+
             i_loc++;
-         }
-      }
-      else {
-         if (ts->input.mat_storage_type == MATRIX_STORAGE_CSC){
-            #pragma omp for schedule(static, lump) nowait
-            for (int k = 0; k < nnz; k++){
-               #pragma omp atomic
-               row_counts[T.i[k]]++;
-            }
-         }
-         else {
-            nz_done_flags_loc = (int *)calloc(nnz_loc, sizeof(int));
-            if (ts->input.fine_grained_flag == 0){
-               row_done_flags_loc = (int *)calloc(n_loc, sizeof(int));
-            }
-            #pragma omp for schedule(static, lump) nowait
-            for (int i = 0; i < n; i++){
-               int jj_low = T.start[i];
-               int jj_high = T.start[i+1];
-
-               row_counts[i] = jj_high - jj_low;
-               if (row_counts[i] == 0 && ts->input.fine_grained_flag == 0){
-                  row_done_flags_loc[i_loc] = 1;
-               }
-
-               i_loc++;
-            }
          }
       }
     
@@ -243,44 +223,36 @@ void TriSolve_Async(TriSolveData *ts,
       jj_loc = 0;
       i_loc = 0;
 
-
       /*********************************
        * message queues implementation
        *********************************/
       if (ts->input.MsgQ_flag == 1){
-         #pragma omp for schedule(static, lump) nowait
-         for (int i = 0; i < n; i++){
-            int jj_start = T.start[i];
-            int jj_end = T.start[i+1];
-            int jj_diff = jj_end - jj_start;
-            while (row_counts_loc[i_loc] > 0){ /* loop until x[i] has been computed */
-               int jj_loc_temp = jj_loc;
-               for (int jj = jj_start; jj < jj_end; jj++){
-                  if (nz_done_flags_loc[jj_loc_temp] == 0){ /* has this non-zero been used? */
-                     double xj;
-                     /* update x[i] if x[j] is available */
-                     if (qGet(&Q, jj, &xj)){  
-                        x[i] -= T.data[jj] * xj;
-
-                        row_counts_loc[i_loc]--;
-
-                        num_relax++;
-
-                        nz_done_flags_loc[jj_loc_temp] = 1;
-                     }
+         if (ts->input.mat_storage_type == MATRIX_STORAGE_CSC){ /* compressed sparse column (CSC) version */
+            #pragma omp for schedule(static, lump) nowait
+            for (int j = 0; j < n; j++){ /* loop over rows */
+               int row_counts_j = row_counts[j];
+               double z;
+               /* stay idle until element j of x is ready to be used */
+               while (row_counts_j > 0){
+                  if (qGet(&Q, j, &z)){
+                     x[j] -= z;
+                     row_counts_j--;
                   }
-                  jj_loc_temp++;
                }
-               num_iters++;
+               /* for row j, update elements of x and row_counts */
+               x[j] /= T.diag[j];
+               double xj = x[j];
+               for (int kk = T.start[j]; kk < T.start[j+1]; kk++){
+                  int i = T.i[kk];
+                  z =  T.data[kk] * xj;
+                  qPut(&Q, i, z);
+                  num_relax++;
+               }
+               j_loc++;
             }
-            x[i] /= T.diag[i];
-            /* send x[i] to rows that need it */
-            double xi = x[i];
-            for (int j = 0; j < nnz_put_targets[i].size(); j++){
-               qPut(&Q, nnz_put_targets[i][j], xi);
-            }
-            jj_loc += jj_diff;
-            i_loc++;
+         }
+         else {
+
          }
       }
       /**************************
