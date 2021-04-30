@@ -20,9 +20,22 @@ void Laplace_2D_5pt(InputData input, /* input data */
    A->m = N;
    A->nnz = 5*n*n - 4*n;
    A->start = (int *)calloc(N+1, sizeof(int));
-   A->j = (int *)calloc(A->nnz, sizeof(int));
+   if (input.coo_flag == 1){
+      A->i = (int *)calloc(A->nnz, sizeof(int));
+      A->j = (int *)calloc(A->nnz, sizeof(int));
+   }
+   else {
+      if (input.mat_storage_type == MATRIX_STORAGE_CSC){   
+         A->i = (int *)calloc(A->nnz, sizeof(int));
+      }
+      else {
+         A->j = (int *)calloc(A->nnz, sizeof(int));
+      }
+   }
    A->data = (double *)calloc(A->nnz, sizeof(double));
    A->diag = (double *)calloc(A->n, sizeof(double));
+
+   int *idx = (int *)calloc(A->nnz, sizeof(int));
 
    int block_end = n-1;
    int block_start = 0;
@@ -33,28 +46,28 @@ void Laplace_2D_5pt(InputData input, /* input data */
       col = i - n;
       if (col >= 0){
          A->data[k] = -1.0;
-         A->j[k] = col;
+         idx[k] = col;
          k++;
       }
       if (i > block_start){
          col = i - 1;
          A->data[k] = -1.0;
-         A->j[k] = col;
+         idx[k] = col;
          k++;
       }
       A->data[k] = 4.0;
-      A->j[k] = i;
+      idx[k] = i;
       k++;
       if (i < block_end){
          col = i + 1;
          A->data[k] = -1.0;
-         A->j[k] = col;
+         idx[k] = col;
          k++;
       }
       col = i + n;
       if (col < N){
          A->data[k] = -1.0;
-         A->j[k] = col;
+         idx[k] = col;
          k++;
       }
       A->start[i+1] = k;
@@ -65,16 +78,29 @@ void Laplace_2D_5pt(InputData input, /* input data */
       }
    }
 
-   //if (input.coo_flag == 1){
-      A->i = (int *)calloc(A->nnz, sizeof(int));
+   for (int k = 0; k < A->nnz; k++){
+      if (input.mat_storage_type == MATRIX_STORAGE_CSC){
+         A->i[k] = idx[k];
+      }
+      else {
+         A->j[k] = idx[k];
+      }
+   }
+
+   if (input.coo_flag == 1){
       k = 0;
       for (int i = 0; i < A->n; i++){
          for (int jj = A->start[i]; jj < A->start[i+1]; jj++){
-            A->i[k] = i;
+            if (input.mat_storage_type == MATRIX_STORAGE_CSC){
+               A->j[k] = i;
+            }
+            else {
+               A->i[k] = i;
+            }
             k++;
          }
       }
-   //}
+   }
 }
 
 /* Generate a random sparse matrix */

@@ -248,7 +248,6 @@ void TriSolve_Async(TriSolveData *ts,
                   qPut(&Q, i, z);
                   num_relax++;
                }
-               j_loc++;
             }
          }
          else {

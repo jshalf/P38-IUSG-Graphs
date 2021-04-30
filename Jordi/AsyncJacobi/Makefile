@@ -5,7 +5,7 @@ CPPFILES = \
 	$(SRCDIR)/Misc.cpp \
 	$(SRCDIR)/Matrix.cpp \
         $(SRCDIR)/MsgQ.cpp \
-	$(ASYNC_JACOBI_SRCDIR)/Jacobi_CSR.cpp \
+	$(ASYNC_JACOBI_SRCDIR)/Jacobi.cpp \
 	$(ASYNC_JACOBI_SRCDIR)/Main.cpp \
 
 COMPILE = g++ -fopenmp -lm -O3 -std=c++11

@@ -77,8 +77,7 @@ double Residual2Norm(Matrix A, /* sparse matrix data (input) */
    for (int i = 0; i < n; i++){
       /* compute residual inner product */
       double res = b[i];
-      for (int jj = A.start[i]; jj < A.start[i+1]; jj++)
-      {
+      for (int jj = A.start[i]; jj < A.start[i+1]; jj++){
          int ii = A.j[jj];
          res -= A.data[jj] * x[ii];
       }
@@ -86,6 +85,42 @@ double Residual2Norm(Matrix A, /* sparse matrix data (input) */
       /* compute right-hand side inner product */
       b_2norm += b[i]*b[i];
    }
+
+   return sqrt(r_2norm)/sqrt(b_2norm);
+}
+
+/* Residual L2-norm using OpenMP reduction */
+double Residual2Norm_CSC(Matrix A, /* sparse matrix data (input) */
+                         double *x, /* solution (input) */
+                         double *b /* right-hand side (input) */
+                         )
+{
+   int n = A.n;
+   double r_2norm = 0, b_2norm = 0;
+   double *r = (double *)calloc(n, sizeof(double));
+   #pragma omp parallel
+   for (int i = 0; i < n; i++){
+      #pragma omp for
+      for (int i = 0; i < n; i++){
+         r[i] = b[i];
+      }
+      #pragma omp for
+      for (int i = 0; i < n; i++){
+         double xi = x[i];
+         for (int jj = A.start[i]; jj < A.start[i+1]; jj++){
+            int ii = A.i[jj];
+            #pragma omp atomic
+            r[ii] -= A.data[jj] * xi;
+         }
+      }
+
+      #pragma omp for reduction(+:r_2norm,b_2norm)
+      for (int i = 0; i < n; i++){
+         r_2norm += r[i]*r[i];
+         b_2norm += b[i]*b[i];
+      }
+   }
+   free(r);
 
    return sqrt(r_2norm)/sqrt(b_2norm);
 }

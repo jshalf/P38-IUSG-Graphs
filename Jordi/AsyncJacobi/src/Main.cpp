@@ -5,13 +5,14 @@
 
 int main (int argc, char *argv[])
 {
-   /* set defaults */
+   /* set defaulsolver */
    SolverData solver;
    solver.input.solver_type = ASYNC_JACOBI;
    solver.input.num_threads = 1;
    solver.input.num_iters = 200;
    solver.input.atomic_flag = 1;
    solver.input.MsgQ_flag = 0;
+   solver.input.mat_storage_type = MATRIX_STORAGE_CSR;
    int verbose_output = 0;
    int num_runs = 1;
    int m = 10; 
@@ -54,12 +55,11 @@ int main (int argc, char *argv[])
          arg_index++;
          solver.input.num_threads = atoi(argv[arg_index]);
       }
-      else if (strcmp(argv[arg_index], "-w") == 0){ /* weight for weights Jacobi (currently not used) */
+      else if (strcmp(argv[arg_index], "-w") == 0){ /* weight for weighsolver Jacobi (currently not used) */
          arg_index++;
          w = atof(argv[arg_index]);
       }
       else if (strcmp(argv[arg_index], "-no_atomic") == 0){ /* use atomics for async Jacobi */
-         arg_index++;
          solver.input.atomic_flag = 0;
       }
       else if (strcmp(argv[arg_index], "-num_runs") == 0){ /* number of separate Jacobi runs */
@@ -75,6 +75,15 @@ int main (int argc, char *argv[])
       else if (strcmp(argv[arg_index], "-help") == 0){ /* print command line options */
          print_usage = 1;
       }
+      else if (strcmp(argv[arg_index], "-sp_store_type") == 0){ /* matrix storage type */
+         arg_index++;
+         if (strcmp(argv[arg_index], "csr") == 0){ /* compressed sparse row */
+            solver.input.mat_storage_type = MATRIX_STORAGE_CSR;
+         }
+         else if (strcmp(argv[arg_index], "csc") == 0){ /* compressed sparse column */
+            solver.input.mat_storage_type = MATRIX_STORAGE_CSC;
+         }
+      }
       arg_index++;
    }
 
@@ -89,7 +98,7 @@ int main (int argc, char *argv[])
       printf("      aj:                 asynchronous Jacobi.\n");
       printf("-n <int value>:           size of test problem.  For 5pt, this is the length of the 2D grid, i.e., the matrix has n^2 rows.\n");
       printf("-num_threads <int value>: number of OpenMP threads.\n");
-      printf("-no_atomic:               turn off atomics.  Only meant for performance measurements and will not produce a correct result.\n");
+      printf("-no_atomic:               turn off atomics.  Only meant for performance measuremensolver and will not produce a correct result.\n");
       printf("-num_runs <int value>:    number of independent runs.  Used for data collection.\n");
       printf("-verb_out:                verbose output.\n");
       printf("-MsgQ:                    use message queues instead of atomics.\n");
@@ -104,13 +113,18 @@ int main (int argc, char *argv[])
    
    omp_set_num_threads(solver.input.num_threads);
 
+   int csc_flag = 0, coo_flag = 0;
+   if (solver.input.mat_storage_type == MATRIX_STORAGE_CSC){
+      csc_flag = 1;
+   }
+   int include_diag = 1;
+
    /* set up problem */
    Matrix A;
    if (problem_type == PROBLEM_FILE){
       char A_mat_file_str[128];
       sprintf(A_mat_file_str, "%s_A.txt.bin", mat_file_str);
-      freadBinaryMatrix(A_mat_file_str, &A, 1, 0, 0);
-
+      freadBinaryMatrix(A_mat_file_str, &A, include_diag, csc_flag, coo_flag);
       //char A_outfile[128];
       //sprintf(A_outfile, "./matlab/A.txt");
       //PrintCOO(A, A_outfile, 0);
@@ -121,8 +135,13 @@ int main (int argc, char *argv[])
    int n = A.n;
    double *x = (double *)calloc(n, sizeof(double));
    double *b = (double *)calloc(n, sizeof(double));
- 
+
+   solver.output.solve_wtime_vec = (double *)calloc(solver.input.num_threads, sizeof(double));
+
    for (int run = 1; run <= num_runs; run++){
+      for (int t = 0; t < solver.input.num_threads; t++){
+         solver.output.solve_wtime_vec[t] = 0.0;
+      }
       srand(0);
       for (int i = 0; i < n; i++){
          b[i] = RandDouble(-1.0, 1.0);
@@ -130,12 +149,24 @@ int main (int argc, char *argv[])
       }
       /* run Jacobi solver */
       Jacobi(&solver, A, b, &x);
-      /* print stats */
-      if (verbose_output){
-         printf("Rel res. 2-norm %e, Solve wall-clock time %e\n", Residual2Norm(A, x, b), solver.output.solve_wtime);
+
+      double solve_wtime_sum = SumDouble(solver.output.solve_wtime_vec, solver.input.num_threads);
+      solver.output.solve_wtime = solve_wtime_sum / (double)solver.input.num_threads;
+
+      double res_norm;
+      if (solver.input.mat_storage_type == MATRIX_STORAGE_CSC){
+         res_norm = Residual2Norm_CSC(A, x, b);
       }
       else {
-         printf("%e %e\n", Residual2Norm(A, x, b), solver.output.solve_wtime);
+         res_norm = Residual2Norm(A, x, b);
+      }
+
+      /* print stasolver */
+      if (verbose_output){
+         printf("Rel res. 2-norm %e, Solve wall-clock time %e\n", res_norm, solver.output.solve_wtime);
+      }
+      else {
+         printf("%e %e\n", res_norm, solver.output.solve_wtime);
       }
    }
 

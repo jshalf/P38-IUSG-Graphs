@@ -14,6 +14,11 @@ double InnerProd(double *x, double *y, int n);
 
 double Residual2Norm(Matrix A, double *x, double *b);
 
+double Residual2Norm_CSC(Matrix A, /* sparse matrix data (input) */
+                         double *x, /* solution (input) */
+                         double *b /* right-hand side (input) */
+                         );
+
 void LevelSets(Matrix A, LevelSetData *lvl_set, int L_flag, int csc_flag);
 
 void LevelSetsDestroy(LevelSetData *lvl_set);

@@ -4,16 +4,16 @@
 
 /***************************************************************
  * Solve for x in Ax=b using synchronous or asynchronous Jacobi.
- * A is in compressed sparse row (Matrix) format.
+ * A is in compressed sparse row (CSR) format.
  ***************************************************************/
 
-double JacobiRelax(Matrix A, double *b, double **x, double *x_prev, int i);
-double AsyncJacobiRelax(Matrix A, double *b, double **x, int i);
-double AsyncJacobiRelaxAtomic(Matrix A, double *b, double **x, int i);
-double AsyncJacobiRelaxMsgQ(Matrix A, double *b, double *x_ghost, Queue *Q, int i);
+double JacobiRelax(CSR A, double *b, double **x, double *x_prev, int i);
+double AsyncJacobiRelax(CSR A, double *b, double **x, int i);
+double AsyncJacobiRelaxAtomic(CSR A, double *b, double **x, int i);
+double AsyncJacobiRelaxMsgQ(CSR A, double *b, double *x_ghost, Queue *Q, int i);
 
 void Jacobi(SolverData *solver,
-            Matrix A, /* sparse matrix */
+            CSR A, /* sparse matrix */
             double *b, /* right-hand side */
             double **x /* solution (output) */
             )
@@ -41,7 +41,7 @@ void Jacobi(SolverData *solver,
    if (solver->input.MsgQ_flag == 1){
       x_ghost = (double *)malloc(nnz * sizeof(double));
       for (int i = 0; i < n; i++){
-         for (int jj = A.start[i]; jj < A.start[i+1]; jj++){
+         for (int jj = A.i_ptr[i]; jj < A.i_ptr[i+1]; jj++){
             int ii = A.j[jj];
             put_targets[ii].push_back(jj); /* put targets correspond to non-zeros in this row */
             x_ghost[jj] = (*x)[ii];
@@ -125,7 +125,7 @@ void Jacobi(SolverData *solver,
  * relaxation routines for different Jacobi implementations
  * (See JacobiRelax() for detailed comments) 
  * **********************************************************/ 
-double JacobiRelax(Matrix A, /* sparse matrix */
+double JacobiRelax(CSR A, /* sparse matrix */
                    double *b, /* right-hadn side */
                    double **x, /* current approximation to the solution (output) */
                    double *x_prev, /* approximation from previous iteration */
@@ -134,7 +134,7 @@ double JacobiRelax(Matrix A, /* sparse matrix */
 {
    /* compute residual for row i */
    double res = b[i]; /* initialize residual */
-   for (int jj = A.start[i]; jj < A.start[i+1]; jj++){ /* loop over non-zeros in this row */
+   for (int jj = A.i_ptr[i]; jj < A.i_ptr[i+1]; jj++){ /* loop over non-zeros in this row */
       int ii = A.j[jj]; /* column index */
       res -= A.data[jj] * x_prev[ii]; /* decrement residual */
    }
@@ -142,20 +142,20 @@ double JacobiRelax(Matrix A, /* sparse matrix */
    return (*x)[i] + res / A.diag[i];
 }
 
-double AsyncJacobiRelax(Matrix A, double *b, double **x, int i)
+double AsyncJacobiRelax(CSR A, double *b, double **x, int i)
 {
    double res = b[i];
-   for (int jj = A.start[i]; jj < A.start[i+1]; jj++){
+   for (int jj = A.i_ptr[i]; jj < A.i_ptr[i+1]; jj++){
       int ii = A.j[jj];
       res -= A.data[jj] * (*x)[ii];
    }
    return (*x)[i] + res / A.diag[i];
 }
 
-double AsyncJacobiRelaxAtomic(Matrix A, double *b, double **x, int i)
+double AsyncJacobiRelaxAtomic(CSR A, double *b, double **x, int i)
 {
    double res = b[i];
-   for (int jj = A.start[i]; jj < A.start[i+1]; jj++){
+   for (int jj = A.i_ptr[i]; jj < A.i_ptr[i+1]; jj++){
       int ii = A.j[jj];
       double xii;
       /* atomically read element A.j[jj] of x */
@@ -166,10 +166,10 @@ double AsyncJacobiRelaxAtomic(Matrix A, double *b, double **x, int i)
    return (*x)[i] + res / A.diag[i];
 }
 
-double AsyncJacobiRelaxMsgQ(Matrix A, double *b, double *x_ghost, Queue *Q, int i)
+double AsyncJacobiRelaxMsgQ(CSR A, double *b, double *x_ghost, Queue *Q, int i)
 {
    double res = b[i];
-   for (int jj = A.start[i]; jj < A.start[i+1]; jj++){
+   for (int jj = A.i_ptr[i]; jj < A.i_ptr[i+1]; jj++){
       int ii = A.j[jj];
       double xii;
       qGet(Q, jj, &(x_ghost[jj])); /* get element A.j[jj] of x and save into x_ghost */
