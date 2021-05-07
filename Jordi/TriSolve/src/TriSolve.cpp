@@ -1,6 +1,7 @@
 #include "TriSolve.hpp"
 #include "../../src/Matrix.hpp"
 #include "../../src/MsgQ.hpp"
+#include "../../src/Misc.hpp"
 
 /******************
  * Serial TriSolve 
@@ -109,7 +110,6 @@ void TriSolve_Async(TriSolveData *ts,
    int *row_counts;
 
    int q_size;
-   vector<vector<int>> nnz_put_targets(n), col_put_targets(n);
    
    Queue Q;
    /* set up message queue data */
@@ -118,10 +118,9 @@ void TriSolve_Async(TriSolveData *ts,
       qAlloc(&Q, q_size);
       qInitLock(&Q);
    }
-   else {
-      /* row counts to track updates to solution vectors */
-      row_counts = (int *)calloc(n, sizeof(int));
-   }
+
+   /* row counts to track updates to solution vectors */
+   row_counts = (int *)calloc(n, sizeof(int));
 
    #pragma omp parallel
    {
@@ -129,12 +128,15 @@ void TriSolve_Async(TriSolveData *ts,
       int i_loc, j_loc, jj_loc, n_loc, nnz_loc, i_prev, i_loc_prev;
       int kk, k;
       double solve_start, setup_start;
+      double comp_wtime_start, comp_wtime = 0.0, MsgQ_wtime_start, MsgQ_wtime = 0.0; 
+      uint64_t MsgQ_cycles_start, MsgQ_cycles = 0, comp_cycles_start, comp_cycles = 0;
       int tid = omp_get_thread_num();
       int *nz_done_flags_loc, *row_done_flags_loc;
       int *row_counts_loc;
       int *my_rows, *my_nzs;
       int num_relax, num_iters;
       int atomic_flag = ts->input.atomic_flag;
+      double *x_loc;
 
       setup_start = omp_get_wtime();
 
@@ -206,16 +208,36 @@ void TriSolve_Async(TriSolveData *ts,
       solve_start = omp_get_wtime();
 
       /* initialize solution */
-      if (ts->input.fine_grained_flag == 1){
-         #pragma omp for schedule(static, lump)
-         for (int i = 0; i < n; i++){
-            x[i] = b[i] / T.diag[i];
+      if (ts->input.MsgQ_flag == 1){
+         x_loc = (double *)calloc(n_loc, sizeof(double));
+         i_loc = 0;
+         if (ts->input.fine_grained_flag == 1){
+            #pragma omp for schedule(static, lump)
+            for (int i = 0; i < n; i++){
+               x_loc[i_loc] = b[i] / T.diag[i];
+               i_loc++;
+            }
+         }
+         else {
+            #pragma omp for schedule(static, lump)
+            for (int i = 0; i < n; i++){
+               x_loc[i_loc] = b[i];
+               i_loc++;
+            }
          }
       }
       else {
-         #pragma omp for schedule(static, lump)
-         for (int i = 0; i < n; i++){
-            x[i] = b[i];
+         if (ts->input.fine_grained_flag == 1){
+            #pragma omp for schedule(static, lump)
+            for (int i = 0; i < n; i++){
+               x[i] = b[i] / T.diag[i];
+            }
+         }
+         else {
+            #pragma omp for schedule(static, lump)
+            for (int i = 0; i < n; i++){
+               x[i] = b[i];
+            }
          }
       }
 
@@ -223,258 +245,675 @@ void TriSolve_Async(TriSolveData *ts,
       jj_loc = 0;
       i_loc = 0;
 
-      /*********************************
-       * message queues implementation
-       *********************************/
+
+
+
+/********************************************************************
+ *            
+ *                       MESSAGE QUEUES
+ *
+ ********************************************************************/
       if (ts->input.MsgQ_flag == 1){
-         if (ts->input.mat_storage_type == MATRIX_STORAGE_CSC){ /* compressed sparse column (CSC) version */
-            #pragma omp for schedule(static, lump) nowait
-            for (int j = 0; j < n; j++){ /* loop over rows */
-               int row_counts_j = row_counts[j];
-               double z;
-               /* stay idle until element j of x is ready to be used */
-               while (row_counts_j > 0){
-                  if (qGet(&Q, j, &z)){
-                     x[j] -= z;
-                     row_counts_j--;
+
+
+
+
+
+         /**********************
+          *
+          *      MsgQ CSC
+          *
+          **********************/         
+         if (ts->input.mat_storage_type == MATRIX_STORAGE_CSC){
+            j_loc = 0;
+           /*****************
+            *   MsgQ wtime
+            *****************/
+            if (ts->input.MsgQ_wtime_flag == 1){
+               #pragma omp for schedule(static, lump) nowait
+               for (int j = 0; j < n; j++){ /* loop over rows */
+                  int row_counts_j = row_counts[j];
+                  double z;
+                  /* stay idle until element j of x is ready to be used */
+                  while (row_counts_j > 0){
+                     MsgQ_wtime_start = omp_get_wtime();
+                     int get_flag = qGet(&Q, j, &z);
+                     MsgQ_wtime += omp_get_wtime() - MsgQ_wtime_start;
+                     if (get_flag == 1){
+                        x_loc[j_loc] -= z;
+                        row_counts_j--;
+                     }
                   }
+                  /* for row j, update elements of x and row_counts */
+                  x_loc[j_loc] /= T.diag[j];
+                  double xj = x_loc[j_loc];
+                  int low = T.start[j];
+                  int high = T.start[j+1];
+                  for (int kk = low; kk < high; kk++){
+                     int i = T.i[kk];
+                     z = T.data[kk] * xj;
+                     MsgQ_wtime_start = omp_get_wtime();
+                     qPut(&Q, i, z);
+                     MsgQ_wtime += omp_get_wtime() - MsgQ_wtime_start;
+                  }
+                  j_loc++;
                }
-               /* for row j, update elements of x and row_counts */
-               x[j] /= T.diag[j];
-               double xj = x[j];
-               for (int kk = T.start[j]; kk < T.start[j+1]; kk++){
-                  int i = T.i[kk];
-                  z =  T.data[kk] * xj;
-                  qPut(&Q, i, z);
-                  num_relax++;
+            }
+            /*****************
+            *   MsgQ cycles
+            *****************/
+            else if (ts->input.MsgQ_cycles_flag == 1){
+               #pragma omp for schedule(static, lump) nowait
+               for (int j = 0; j < n; j++){ /* loop over rows */
+                  int row_counts_j = row_counts[j];
+                  double z;
+                  /* stay idle until element j of x is ready to be used */
+                  while (row_counts_j > 0){
+                     MsgQ_cycles_start = rdtsc();
+                     int get_flag = qGet(&Q, j, &z);
+                     MsgQ_cycles += rdtsc() - MsgQ_cycles_start;
+                     if (get_flag == 1){
+                        x_loc[j_loc] -= z;
+                        row_counts_j--;
+                     }
+                  }
+                  /* for row j, update elements of x and row_counts */
+                  x_loc[j_loc] /= T.diag[j];
+                  double xj = x_loc[j_loc];
+                  int low = T.start[j];
+                  int high = T.start[j+1];
+                  for (int kk = low; kk < high; kk++){
+                     int i = T.i[kk];
+                     z = T.data[kk] * xj;
+                     MsgQ_cycles_start = rdtsc();
+                     qPut(&Q, i, z);
+                     MsgQ_cycles += rdtsc() - MsgQ_cycles_start;
+                  }
+                  j_loc++;
+               }
+            }
+           /*****************
+            *   comp wtime
+            *****************/
+            else if (ts->input.comp_wtime_flag == 1){
+               #pragma omp for schedule(static, lump) nowait
+               for (int j = 0; j < n; j++){ /* loop over rows */
+                  int row_counts_j = row_counts[j];
+                  double z;
+                  /* stay idle until element j of x is ready to be used */
+                  while (row_counts_j > 0){
+                     int get_flag = qGet(&Q, j, &z);
+                     if (get_flag == 1){
+                        comp_wtime_start = omp_get_wtime();
+                        x_loc[j_loc] -= z;
+                        comp_wtime += omp_get_wtime() - comp_wtime_start;
+                        row_counts_j--;
+                     }
+                  }
+                  comp_wtime_start = omp_get_wtime();
+                  /* for row j, update elements of x and row_counts */
+                  x_loc[j_loc] /= T.diag[j];
+                  double xj = x_loc[j_loc];
+                  int low = T.start[j];
+                  int high = T.start[j+1];
+                  comp_wtime += omp_get_wtime() - comp_wtime_start;
+                  for (int kk = low; kk < high; kk++){
+                     comp_wtime_start = omp_get_wtime();
+                     int i = T.i[kk];
+                     z = T.data[kk] * xj;
+                     comp_wtime += omp_get_wtime() - comp_wtime_start;
+                     qPut(&Q, i, z);
+                  }
+                  j_loc++;
+               }
+            }
+            /******************************
+             *   MsgQ no-op and comp no-op
+             ******************************/
+            else if ((ts->input.MsgQ_noop_flag == 1) && (ts->input.comp_noop_flag == 1)){
+               #pragma omp for schedule(static, lump) nowait
+               for (int j = 0; j < n; j++){ /* loop over rows */
+                  int row_counts_j = row_counts[j];
+                  double z;
+                  while (row_counts_j > 0){
+                     int get_flag = 1;
+                     if (get_flag == 1){
+                        row_counts_j--;
+                     }
+                  }
+                  int low = T.start[j];
+                  int high = T.start[j+1];
+                  for (int kk = low; kk < high; kk++){
+                     int i = T.i[kk];
+                  }
+                  j_loc++;
+               }
+            }
+           /*****************
+            *   MsgQ no-op
+            *****************/
+            else if (ts->input.MsgQ_noop_flag == 1){
+               #pragma omp for schedule(static, lump) nowait
+               for (int j = 0; j < n; j++){ /* loop over rows */
+                  int row_counts_j = row_counts[j];
+                  double z;
+                  while (row_counts_j > 0){
+                     int get_flag = 1;
+                     if (get_flag == 1){
+                        x_loc[j_loc] -= z;
+                        row_counts_j--;
+                     }
+                  }
+                  /* for row j, update elements of x and row_counts */
+                  x_loc[j_loc] /= T.diag[j];
+                  double xj = x_loc[j_loc];
+                  int low = T.start[j];
+                  int high = T.start[j+1];
+                  for (int kk = low; kk < high; kk++){
+                     int i = T.i[kk];
+                     z = T.data[kk] * xj;
+                  }
+                  j_loc++;
+               }
+            }
+           /*****************
+            *   comp no-op
+            *****************/
+            else if (ts->input.comp_noop_flag == 1){
+               #pragma omp for schedule(static, lump) nowait
+               for (int j = 0; j < n; j++){ /* loop over rows */
+                  int row_counts_j = row_counts[j];
+                  double z = 0.0;
+                  /* stay idle until element j of x is ready to be used */
+                  while (row_counts_j > 0){
+                     int get_flag = qGet(&Q, j, &z);
+                     if (get_flag == 1){
+                        row_counts_j--;
+                     }
+                  }
+                  int low = T.start[j];
+                  int high = T.start[j+1];
+                  for (int kk = low; kk < high; kk++){
+                     int i = T.i[kk];
+                     qPut(&Q, i, z);
+                  }
+                  j_loc++;
+               }
+            }
+           /**********************************************
+            * standard scheme (no timers, no-ops, etc...) 
+            **********************************************/
+            else {
+               #pragma omp for schedule(static, lump) nowait
+               for (int j = 0; j < n; j++){ /* loop over rows */
+                  int row_counts_j = row_counts[j];
+                  double z;
+                  /* stay idle until element j of x is ready to be used */
+                  while (row_counts_j > 0){
+                     int get_flag = qGet(&Q, j, &z);
+                     if (get_flag == 1){
+                        x_loc[j_loc] -= z;
+                        row_counts_j--;
+                     }
+                  }
+                  /* for row j, update elements of x and row_counts */
+                  x_loc[j_loc] /= T.diag[j];
+                  double xj = x_loc[j_loc];
+                  for (int kk = T.start[j]; kk < T.start[j+1]; kk++){
+                     int i = T.i[kk];
+                     z = T.data[kk] * xj;
+                     qPut(&Q, i, z);
+                     num_relax++;
+                  }
+                  j_loc++;
                }
             }
          }
+
+
+
+
+
+         /**********************
+          *
+          *      MsgQ CSR
+          *
+          **********************/
          else {
 
          }
       }
-      /**************************
-       * atomics implementations
-       *************************/
+
+
+
+
+
+
+
+
+
+
+/*****************************************************************
+ * 
+ *                         ATOMIC
+ *
+ *****************************************************************/
       else {
-         if (ts->input.mat_storage_type == MATRIX_STORAGE_CSC){ /* compressed sparse column (CSC) version */
-            if (ts->input.fine_grained_flag == 1){ /* fine-grained version */
+         if (ts->input.mat_storage_type == MATRIX_STORAGE_CSC){
+
+           
+
+ 
+
+            /**************************
+             * 
+             * Atomic CSC fine-grained
+             *
+             **************************/ 
+            if (ts->input.fine_grained_flag == 1){
                kk = 0;
-               for (int j = 0; j < n; j++){ /* loop over rows */
-                  k = my_nzs[kk];
-                  int k_end = T.start[j+1];
-                  if (k < k_end){ /* does this thread own non-zeros for this row? */
+               /************
+                * atomic
+                ************/
+               if (atomic_flag == 1){
+                  for (int j = 0; j < n; j++){ /* loop over rows */
+                     k = my_nzs[kk];
+                     int k_end = T.start[j+1];
+                     if (k < k_end){ /* does this thread own non-zeros for this row? */
+                        int row_counts_j;
+                        /* stay idle until element j of x is ready to be used */
+                        do {
+                           #pragma omp atomic read
+                           row_counts_j = row_counts[j];
+                        } while (row_counts_j > 0);
+                        double xj = x[j];
+                        /* for row j, update elements of x and row_counts */
+                        while (k < k_end){
+                           int i = T.i[k];
+                           double Tij = T.data[k];
+                           double Tii = T.diag[i];
+
+                           #pragma omp atomic
+                           x[i] -= xj * (Tij / Tii);
+
+                           #pragma omp atomic
+                           row_counts[i]--;
+
+                           kk++;
+                           k = my_nzs[kk];
+                          
+                           num_relax++;
+                        }
+                     }
+                  }
+               }
+               /************
+                * no atomic
+                ************/
+               else {
+                  for (int j = 0; j < n; j++){ /* loop over rows */
+                     k = my_nzs[kk];
+                     int k_end = T.start[j+1];
+                     if (k < k_end){ /* does this thread own non-zeros for this row? */
+                        int row_counts_j;
+                        /* stay idle until element j of x is ready to be used */
+                        do {
+                           //#pragma omp atomic read
+                           row_counts_j = row_counts[j];
+                        } while (row_counts_j > 0);
+                        double xj = x[j];
+                        /* for row j, update elements of x and row_counts */
+                        while (k < k_end){
+                           int i = T.i[k];
+                           double Tij = T.data[k];
+                           double Tii = T.diag[i];
+
+                           x[i] -= xj * (Tij / Tii);
+
+                           #pragma omp atomic
+                           row_counts[i]--;
+
+                           kk++;
+                           k = my_nzs[kk];
+
+                           num_relax++;
+                        }
+                     }
+                  }
+               }
+            }
+
+
+
+
+
+            /**********************
+             * 
+             *     Atomic CSC
+             *
+             **********************/
+            else {
+               /************
+                * atomic
+                ************/
+               if (atomic_flag == 1){
+                  #pragma omp for schedule(static, lump) nowait
+                  for (int j = 0; j < n; j++){ /* loop over rows */
                      int row_counts_j;
                      /* stay idle until element j of x is ready to be used */
                      do {
-                        if (atomic_flag == 1){
-                           #pragma omp atomic read
-                           row_counts_j = row_counts[j];
-                        }
-                        else {
-                           row_counts_j = row_counts[j];
-                        }
+                        #pragma omp atomic read
+                        row_counts_j = row_counts[j];
                      } while (row_counts_j > 0);
-                     double xj = x[j];
                      /* for row j, update elements of x and row_counts */
-                     while (k < k_end){
-                        int i = T.i[k];
-                        double Tij = T.data[k];
-                        double Tii = T.diag[i];
+                     x[j] /= T.diag[j];
+                     double xj = x[j];
+                     for (int kk = T.start[j]; kk < T.start[j+1]; kk++){
+                        int i = T.i[kk];
 
-                        if (atomic_flag == 1){
-                           #pragma omp atomic
-                           x[i] -= xj * (Tij / Tii);
-                        }
-                        else {
-                           x[i] -= xj * (Tij / Tii);
-                        }
+                        #pragma omp atomic
+                        x[i] -= T.data[kk] * xj;
 
                         #pragma omp atomic
                         row_counts[i]--;
 
-                        kk++;
-                        k = my_nzs[kk];
-                       
+                        num_relax++;
+                     }
+                  }
+               }
+               /************ 
+                * no atomic 
+                ************/
+               else {
+                  #pragma omp for schedule(static, lump) nowait
+                  for (int j = 0; j < n; j++){ /* loop over rows */
+                     int row_counts_j;
+                     /* stay idle until element j of x is ready to be used */
+                     do {
+                        //#pragma omp atomic read
+                        row_counts_j = row_counts[j];
+                     } while (row_counts_j > 0);
+                     /* for row j, update elements of x and row_counts */
+                     x[j] /= T.diag[j];
+                     double xj = x[j];
+                     for (int kk = T.start[j]; kk < T.start[j+1]; kk++){
+                        int i = T.i[kk];
+
+                        x[i] -= T.data[kk] * xj;
+
+                        #pragma omp atomic
+                        row_counts[i]--;
+
                         num_relax++;
                      }
                   }
                }
             }
-            else {
-               #pragma omp for schedule(static, lump) nowait
-               for (int j = 0; j < n; j++){ /* loop over rows */
-                  int row_counts_j;
-                  /* stay idle until element j of x is ready to be used */
-                  do {
-                     if (atomic_flag == 1){
-                        #pragma omp atomic read
-                        row_counts_j = row_counts[j];
-                     }
-                     else {
-                        row_counts_j = row_counts[j];
-                     }
-                  } while (row_counts_j > 0);
-                  /* for row j, update elements of x and row_counts */
-                  x[j] /= T.diag[j];
-                  double xj = x[j];
-                  for (int kk = T.start[j]; kk < T.start[j+1]; kk++){
-                     int i = T.i[kk];
-                     if (atomic_flag == 1){
-                        #pragma omp atomic
-                        x[i] -= T.data[kk] * xj;
-                     }
-                     else {
-                        x[i] -= T.data[kk] * xj;
-                     }
 
-                     #pragma omp atomic
-                     row_counts[i]--;
 
-                     num_relax++;
-                  }
-               }
-            }
          }
-         else { /* compressed sparse column (CSR) version */
-            if (ts->input.fine_grained_flag == 1){ /* fine-grained version */
+         else {
+
+
+
+
+
+            /**************************
+             * 
+             * Atomic CSR fine-grained
+             *
+             **************************/
+            if (ts->input.fine_grained_flag == 1){
                kk = 0;
-               for (int i = 0; i < n; i++){ /* loop over rows */
-                  k = my_nzs[kk];
-                  int kk_start = kk;
-                  int done_flag;
-                  int k_end = T.start[i+1];
-                  if (k < k_end){ /* does this thread own non-zeros for this row? */
-                     double Tii = T.diag[i];
-                     do{
-                        kk = kk_start;
-                        k = my_nzs[kk];
-                        done_flag = 1;
-                        while (k < k_end){
-                           if (nz_done_flags_loc[kk] == 0){ /* has this non-zero been used? */
-                              int j = T.j[k];
-                              int row_counts_j;
-                              /* check if x[j] is available (row_counts[j] must be zero) */
-                              if (atomic_flag == 1){
+               /************
+                * atomic
+                ************/
+               if (atomic_flag == 1){
+                  for (int i = 0; i < n; i++){ /* loop over rows */
+                     k = my_nzs[kk];
+                     int kk_start = kk;
+                     int done_flag;
+                     int k_end = T.start[i+1];
+                     if (k < k_end){ /* does this thread own non-zeros for this row? */
+                        double Tii = T.diag[i];
+                        do{
+                           kk = kk_start;
+                           k = my_nzs[kk];
+                           done_flag = 1;
+                           while (k < k_end){
+                              if (nz_done_flags_loc[kk] == 0){ /* has this non-zero been used? */
+                                 int j = T.j[k];
+                                 int row_counts_j;
+                                 /* check if x[j] is available (row_counts[j] must be zero) */
                                  #pragma omp atomic read
                                  row_counts_j = row_counts[j];
-                              }
-                              else {
-                                 row_counts_j = row_counts[j];
-                              }
-                              
-                              /* if x[j] is available, update x[i] and row_counts[i] */
-                              if (row_counts_j == 0){
-                                 double Tij = T.data[k];
-                                 double xj = x[j];
-                               
-                                 if (atomic_flag == 1){
+                                 
+                                 /* if x[j] is available, update x[i] and row_counts[i] */
+                                 if (row_counts_j == 0){
+                                    double Tij = T.data[k];
+                                    double xj = x[j];
+                                  
                                     #pragma omp atomic
                                     x[i] -= xj * Tij / Tii;
+
+                                    num_relax++;
+
+                                    #pragma omp atomic
+                                    row_counts[i]--;
+
+                                    nz_done_flags_loc[kk] = 1;
                                  }
                                  else {
+                                    done_flag = 0;
+                                 }
+                              }
+                              kk++;
+                              k = my_nzs[kk];
+                           }
+                        } while (done_flag == 0); /* loop until x[i] has been completed */
+                     }
+                  }
+               }
+               /************
+                * no atomic
+                ************/
+               else {
+                  for (int i = 0; i < n; i++){ /* loop over rows */
+                     k = my_nzs[kk];
+                     int kk_start = kk;
+                     int done_flag;
+                     int k_end = T.start[i+1];
+                     if (k < k_end){ /* does this thread own non-zeros for this row? */
+                        double Tii = T.diag[i];
+                        do{
+                           kk = kk_start;
+                           k = my_nzs[kk];
+                           done_flag = 1;
+                           while (k < k_end){
+                              if (nz_done_flags_loc[kk] == 0){ /* has this non-zero been used? */
+                                 int j = T.j[k];
+                                 int row_counts_j;
+                                 /* check if x[j] is available (row_counts[j] must be zero) */
+                                 row_counts_j = row_counts[j];
+
+                                 /* if x[j] is available, update x[i] and row_counts[i] */
+                                 if (row_counts_j == 0){
+                                    double Tij = T.data[k];
+                                    double xj = x[j];
+
                                     x[i] -= xj * Tij / Tii;
-                                 }                           
+
+                                    num_relax++;
+
+                                    #pragma omp atomic
+                                    row_counts[i]--;
+
+                                    nz_done_flags_loc[kk] = 1;
+                                 }
+                                 else {
+                                    done_flag = 0;
+                                 }
+                              }
+                              kk++;
+                              k = my_nzs[kk];
+                           }
+                        } while (done_flag == 0); /* loop until x[i] has been completed */
+                     }
+                  }
+               }
+            } 
+
+
+
+
+
+            /**********************
+             *        
+             *    Atomic CSR
+             *
+             **********************/
+            else {
+               /************
+                * atomic
+                ************/
+               if (atomic_flag == 1){
+                  #pragma omp for schedule(static, lump) nowait
+                  for (int i = 0; i < n; i++){ /* loop over rows */
+                     int jj_start = T.start[i];
+                     int jj_end = T.start[i+1];
+                     int jj_diff = jj_end - jj_start;
+                     while (row_done_flags_loc[i_loc] == 0){ /* loop until x[i] has been completed */
+                        int jj_loc_temp = jj_loc;
+                        for (int jj = jj_start; jj < jj_end; jj++){
+                           if (nz_done_flags_loc[jj_loc_temp] == 0){ /* has this non-zero been used? */
+                              int j = T.j[jj];
+                              int row_counts_j;
+                              /* check if x[j] is available (row_counts[j] must be zero) */
+                              #pragma omp atomic read
+                              row_counts_j = row_counts[j];
+                              /* if x[j] is available, update x[i] and row_counts[i] */
+                              if (row_counts_j == -1){
+                                 x[i] -= T.data[jj] * x[j];
 
                                  num_relax++;
 
                                  #pragma omp atomic
                                  row_counts[i]--;
+                                 if (row_counts[i] == 0){
+                                    row_done_flags_loc[i_loc] = 1;
+                                 }
 
-                                 nz_done_flags_loc[kk] = 1;
-                              }
-                              else {
-                                 done_flag = 0;
+                                 nz_done_flags_loc[jj_loc_temp] = 1;
                               }
                            }
-                           kk++;
-                           k = my_nzs[kk];
+                           jj_loc_temp++;
                         }
-                     } while (done_flag == 0); /* loop until x[i] has been completed */
+                     }
+                     x[i] /= T.diag[i];
+                     #pragma omp atomic
+                     row_counts[i]--;
+
+                     jj_loc += jj_diff;
+                     i_loc++;
                   }
                }
-            } 
-            else {
-               #pragma omp for schedule(static, lump) nowait
-               for (int i = 0; i < n; i++){ /* loop over rows */
-                  int jj_start = T.start[i];
-                  int jj_end = T.start[i+1];
-                  int jj_diff = jj_end - jj_start;
-                  while (row_done_flags_loc[i_loc] == 0){ /* loop until x[i] has been completed */
-                     int jj_loc_temp = jj_loc;
-                     for (int jj = jj_start; jj < jj_end; jj++){
-                        if (nz_done_flags_loc[jj_loc_temp] == 0){ /* has this non-zero been used? */
-                           int j = T.j[jj];
-                           int row_counts_j;
-                           /* check if x[j] is available (row_counts[j] must be zero) */
-                           if (atomic_flag == 1){
-                              #pragma omp atomic read
+               /************
+                * no atomic
+                ************/
+               else {
+                  #pragma omp for schedule(static, lump) nowait
+                  for (int i = 0; i < n; i++){ /* loop over rows */
+                     int jj_start = T.start[i];
+                     int jj_end = T.start[i+1];
+                     int jj_diff = jj_end - jj_start;
+                     while (row_done_flags_loc[i_loc] == 0){ /* loop until x[i] has been completed */
+                        int jj_loc_temp = jj_loc;
+                        for (int jj = jj_start; jj < jj_end; jj++){
+                           if (nz_done_flags_loc[jj_loc_temp] == 0){ /* has this non-zero been used? */
+                              int j = T.j[jj];
+                              int row_counts_j;
+                              /* check if x[j] is available (row_counts[j] must be zero) */
                               row_counts_j = row_counts[j];
-                           }
-                           else {
-                              row_counts_j = row_counts[j];
-                           }
-                           /* if x[j] is available, update x[i] and row_counts[i] */
-                           if (row_counts_j == -1){
-                              x[i] -= T.data[jj] * x[j];
+                              /* if x[j] is available, update x[i] and row_counts[i] */
+                              if (row_counts_j == -1){
+                                 x[i] -= T.data[jj] * x[j];
 
-                              num_relax++;
+                                 num_relax++;
 
-                              #pragma omp atomic
-                              row_counts[i]--;
-                              if (row_counts[i] == 0){
-                                 row_done_flags_loc[i_loc] = 1;
+                                 #pragma omp atomic
+                                 row_counts[i]--;
+                                 if (row_counts[i] == 0){
+                                    row_done_flags_loc[i_loc] = 1;
+                                 }
+
+                                 nz_done_flags_loc[jj_loc_temp] = 1;
                               }
-
-                              nz_done_flags_loc[jj_loc_temp] = 1;
                            }
+                           jj_loc_temp++;
                         }
-                        jj_loc_temp++;
                      }
-                  }
-                  x[i] /= T.diag[i];
-                  #pragma omp atomic
-                  row_counts[i]--;
+                     x[i] /= T.diag[i];
+                     #pragma omp atomic
+                     row_counts[i]--;
 
-                  jj_loc += jj_diff;
-                  i_loc++;
+                     jj_loc += jj_diff;
+                     i_loc++;
+                  }
                }
             }
          }
+      }
 
-         ts->output.solve_wtime_vec[tid] = omp_get_wtime() - solve_start;
 
-         ts->output.num_relax[tid] = num_relax;
-         ts->output.num_iters[tid] = num_iters;
+      ts->output.solve_wtime_vec[tid] = omp_get_wtime() - solve_start;
 
-         if (ts->input.MsgQ_flag == 1){
+      ts->output.num_relax[tid] = num_relax;
+      ts->output.num_iters[tid] = num_iters;
 
+      if (ts->input.MsgQ_flag == 1){
+         i_loc = 0;
+         #pragma omp for schedule(static, lump) nowait
+         for (int i = 0; i < n; i++){
+            x[i] = x_loc[i_loc];
+            i_loc++;
+         }
+         free(x_loc);
+
+         if (ts->input.MsgQ_wtime_flag == 1){
+            ts->output.MsgQ_wtime_vec[tid] = MsgQ_wtime;
+         }
+         else if (ts->input.MsgQ_cycles_flag == 1){
+            ts->output.MsgQ_cycles_vec[tid] = MsgQ_cycles;
+         }
+         else if (ts->input.comp_wtime_flag == 1){
+            ts->output.comp_wtime_vec[tid] = comp_wtime;
+         }
+         else if (ts->input.comp_cycles_flag == 1){
+            ts->output.comp_cycles_vec[tid] = comp_cycles;
+         }
+      }
+      else {
+         if (ts->input.mat_storage_type == MATRIX_STORAGE_CSC){
+            if (ts->input.fine_grained_flag == 1){
+               free(my_nzs);
+            }
          }
          else {
-            if (ts->input.mat_storage_type == MATRIX_STORAGE_CSC){
-               if (ts->input.fine_grained_flag == 1){
-                  free(my_nzs);
-               }
+            free(nz_done_flags_loc);
+            if (ts->input.fine_grained_flag == 1){
+               free(my_nzs);
             }
             else {
-               free(nz_done_flags_loc);
-               if (ts->input.fine_grained_flag == 1){
-                  free(my_nzs);
-               }
-               else {
-                  free(row_done_flags_loc);
-               }
+               free(row_done_flags_loc);
             }
          }
       }
    }
 
    if (ts->input.MsgQ_flag == 1){
+      //qPrintDAG(&Q);
       qDestroyLock(&Q);
       qFree(&Q);
    }
-   else {
-      free(row_counts);
-   }
+   free(row_counts);
 }

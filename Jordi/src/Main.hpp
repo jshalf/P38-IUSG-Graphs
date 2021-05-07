@@ -40,6 +40,7 @@
 #include <random>
 #include <queue>
 #include <inttypes.h>
+#include <numeric>
 
 using namespace std;
 
@@ -66,6 +67,12 @@ typedef struct{
    int mat_storage_type;
    int coo_flag;
    int fine_grained_flag;
+   int comp_wtime_flag;
+   int MsgQ_wtime_flag;
+   int comp_cycles_flag;
+   int MsgQ_cycles_flag;
+   int comp_noop_flag;
+   int MsgQ_noop_flag;
 }InputData;
 
 /* Output data */
@@ -75,6 +82,10 @@ typedef struct{
    double *atomic_wtime_vec; /* atomic wall-clock time per thread */
    double *solve_wtime_vec; /* solve wall-clock time per thread */
    double *setup_wtime_vec;
+   double *MsgQ_wtime_vec;
+   double *comp_wtime_vec;
+   uint64_t *MsgQ_cycles_vec;
+   uint64_t *comp_cycles_vec;
    int *num_iters; /* number of iterations */
    int *num_relax; /* number of relaxations */
 }OutputData;
@@ -83,8 +94,7 @@ typedef struct{
 typedef struct{
    InputData input;
    OutputData output;
-   double *y1_expand;
-   double *y2_expand;
+   double *y_expand;
 }MatVecData;
 
 /* Struct used by AsyncJacobi benchmark */

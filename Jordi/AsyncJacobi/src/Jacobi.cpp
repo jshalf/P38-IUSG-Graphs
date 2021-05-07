@@ -1,6 +1,7 @@
 #include "Jacobi.hpp"
 #include "../../src/Matrix.hpp"
 #include "../../src/MsgQ.hpp"
+#include "../../src/Misc.hpp"
 
 /***************************************************************
  * Solve for x in Ax=b using synchronous or asynchronous Jacobi.
@@ -13,7 +14,7 @@ double AsyncJacobiRelaxAtomic_CSR(Matrix A, double *b, double **x, int i);
 double AsyncJacobiRelaxMsgQ_CSR(Matrix A, double *b, double *x_ghost, Queue *Q, int i);
 
 void JacobiRelaxAtomic_CSC(Matrix A, double **r, double z, int i);
-void AsyncJacobiRelax_CSC(Matrix A, double **r, double z, int i);
+void JacobiRelax_CSC(Matrix A, double **r, double z, int i);
 
 void Jacobi(SolverData *solver,
             Matrix A, /* sparse matrix */
@@ -47,23 +48,29 @@ void Jacobi(SolverData *solver,
    Queue Q;
    /* set up message queues */
    if (solver->input.MsgQ_flag == 1){
-      if (solver->input.mat_storage_type == MATRIX_STORAGE_CSR){
+      if (solver->input.mat_storage_type == MATRIX_STORAGE_CSC){
+         q_size = n;
+      }
+      else {
          x_ghost = (double *)malloc(nnz * sizeof(double));
          for (int i = 0; i < n; i++){
             for (int jj = A.start[i]; jj < A.start[i+1]; jj++){
                int ii = A.j[jj];
-               put_targets[ii].push_back(jj); /* put targesolver correspond to non-zeros in this row */
+               put_targets[ii].push_back(jj); /* put targets correspond to non-zeros in this row */
                x_ghost[jj] = (*x)[ii];
             }
          }
+         q_size = nnz;
       }
-      q_size = nnz;
       qAlloc(&Q, q_size);
       qInitLock(&Q);
    }
 
    #pragma omp parallel
    {
+      double comp_wtime_start, comp_wtime = 0.0, MsgQ_wtime_start, MsgQ_wtime = 0.0;
+      uint64_t MsgQ_cycles_start, MsgQ_cycles = 0, comp_cycles_start, comp_cycles = 0;
+
       int tid = omp_get_thread_num();
       if (solver->input.mat_storage_type == MATRIX_STORAGE_CSC){
          #pragma omp for
@@ -73,7 +80,14 @@ void Jacobi(SolverData *solver,
       }
 
       double solve_start = omp_get_wtime();   
-      if (solver_type == SYNC_JACOBI){ /* synchronous Jacobi */
+
+
+      /*************************
+       * 
+       *       SYNC JACOBI
+       *
+       *************************/
+      if (solver_type == SYNC_JACOBI){
          if (solver->input.mat_storage_type == MATRIX_STORAGE_CSC){
             for (int iter = 0; iter < num_iters; iter++){
                #pragma omp for
@@ -101,51 +115,202 @@ void Jacobi(SolverData *solver,
             }
          }
       }
+
+
+
+
+
+
+/*****************************************************
+ *
+ *                       ASYNC JACOBI
+ *
+ *****************************************************/
       else if (solver_type == ASYNC_JACOBI){
          if (solver->input.mat_storage_type == MATRIX_STORAGE_CSC){
-            if (solver->input.MsgQ_flag == 1){ /* asynchronous Jacobi with message queues */
-               for (int iter = 0; iter < num_iters; iter++){
-                  #pragma omp for nowait
-                  for (int i = 0; i < n; i++){
-                     double z;
-                     while (qGet(&Q, i, &z)){
-                        r[i] -= z;
-                     }
-                     z = r[i];
-                     z /= A.diag[i];
-                     (*x)[i] += z;
-                     for (int jj = A.start[i]; jj < A.start[i+1]; jj++){
-                        qPut(&Q, A.i[jj], A.data[jj] * z);
+
+
+
+            /*************************
+             * Async Jacobi MsgQ CSC
+             *************************/
+            if (solver->input.MsgQ_flag == 1){
+               /*****************
+                *   MsgQ wtime
+                *****************/
+               if (solver->input.MsgQ_wtime_flag == 1){
+                  for (int iter = 0; iter < num_iters; iter++){
+                     #pragma omp for nowait
+                     for (int i = 0; i < n; i++){
+                        double z;
+                        MsgQ_wtime_start = omp_get_wtime();
+                        int get_flag = qGet(&Q, i, &z);
+                        MsgQ_wtime += omp_get_wtime() - MsgQ_wtime_start;
+                        while (get_flag == 1){
+                           r[i] -= z;
+                           MsgQ_wtime_start = omp_get_wtime();
+                           get_flag = qGet(&Q, i, &z);
+                           MsgQ_wtime += omp_get_wtime() - MsgQ_wtime_start;
+                        }
+                        z = r[i];
+                        z /= A.diag[i];
+                        (*x)[i] += z;
+                        for (int jj = A.start[i]; jj < A.start[i+1]; jj++){
+                           MsgQ_wtime_start = omp_get_wtime();
+                           qPut(&Q, A.i[jj], A.data[jj] * z);
+                           MsgQ_wtime += omp_get_wtime() - MsgQ_wtime_start;
+                        }
                      }
                   }
-               }      
+               }
+               /*****************
+                *   MsgQ cycles
+                *****************/
+               else if (solver->input.MsgQ_cycles_flag == 1){
+                  for (int iter = 0; iter < num_iters; iter++){
+                     #pragma omp for nowait
+                     for (int i = 0; i < n; i++){
+                        double z;
+                        MsgQ_cycles_start = rdtsc();
+                        int get_flag = qGet(&Q, i, &z);
+                        MsgQ_cycles += rdtsc() - MsgQ_cycles_start;
+                        while (get_flag == 1){
+                           r[i] -= z;
+                           MsgQ_cycles_start = rdtsc();
+                           get_flag = qGet(&Q, i, &z);
+                           MsgQ_cycles += rdtsc() - MsgQ_cycles_start;
+                        }
+                        z = r[i];
+                        z /= A.diag[i];
+                        (*x)[i] += z;
+                        for (int jj = A.start[i]; jj < A.start[i+1]; jj++){
+                           MsgQ_cycles_start = rdtsc();
+                           qPut(&Q, A.i[jj], A.data[jj] * z);
+                           MsgQ_cycles += rdtsc() - MsgQ_cycles_start;
+                        }
+                     }
+                  }
+               }
+               /*****************
+                *   comp wtime
+                *****************/
+               else if (solver->input.comp_wtime_flag == 1){
+                  for (int iter = 0; iter < num_iters; iter++){
+                     #pragma omp for nowait
+                     for (int i = 0; i < n; i++){
+                        double z;
+                        int get_flag = qGet(&Q, i, &z);
+                        while (get_flag == 1){
+                           comp_wtime_start = omp_get_wtime();
+                           r[i] -= z;
+                           comp_wtime += omp_get_wtime() - comp_wtime_start;
+                           get_flag = qGet(&Q, i, &z);
+                        }
+                        comp_wtime_start = omp_get_wtime();
+                        z = r[i];
+                        z /= A.diag[i];
+                        (*x)[i] += z;
+                        comp_wtime += omp_get_wtime() - comp_wtime_start;
+                        for (int jj = A.start[i]; jj < A.start[i+1]; jj++){
+                           qPut(&Q, A.i[jj], A.data[jj] * z);
+                        }
+                     }
+                  }
+               }
+               /*****************
+                *   MsgQ no-op
+                *****************/
+               else if (solver->input.MsgQ_noop_flag == 1){
+                  for (int iter = 0; iter < num_iters; iter++){
+                     #pragma omp for nowait
+                     for (int i = 0; i < n; i++){
+                        double z = 0.0;
+                        r[i] -= z;
+                        z = r[i];
+                        z /= A.diag[i];
+                        (*x)[i] += z;
+                        for (int jj = A.start[i]; jj < A.start[i+1]; jj++){
+                        }
+                     }
+                  }
+               }
+               /*****************
+                *   comp no-op
+                *****************/
+               else if (solver->input.comp_noop_flag == 1){
+                  for (int iter = 0; iter < num_iters; iter++){
+                     #pragma omp for nowait
+                     for (int i = 0; i < n; i++){
+                        double z;
+                        int get_flag = qGet(&Q, i, &z);
+                        while (get_flag == 1){
+                           get_flag = qGet(&Q, i, &z);
+                        }
+                        for (int jj = A.start[i]; jj < A.start[i+1]; jj++){
+                           qPut(&Q, A.i[jj], A.data[jj] * z);
+                        }
+                     }
+                  }
+               }
+               else {
+                  for (int iter = 0; iter < num_iters; iter++){
+                     #pragma omp for nowait
+                     for (int i = 0; i < n; i++){
+                        double z;
+                        int get_flag = qGet(&Q, i, &z);
+                        while (get_flag == 1){
+                           r[i] -= z;
+                           get_flag = qGet(&Q, i, &z);
+                        }
+                        z = r[i];
+                        z /= A.diag[i];
+                        (*x)[i] += z;
+                        for (int jj = A.start[i]; jj < A.start[i+1]; jj++){
+                           qPut(&Q, A.i[jj], A.data[jj] * z);
+                        }
+                     }
+                  }
+               }
             }
+
+            /***************************
+             * Async Jacobi atomic CSC
+             ***************************/
             else {
-               for (int iter = 0; iter < num_iters; iter++){
-                  #pragma omp for nowait
-                  for (int i = 0; i < n; i++){
-                     double z;
-                     if (solver->input.atomic_flag == 1){
+               if (solver->input.atomic_flag == 1){ /* atomic */
+                  for (int iter = 0; iter < num_iters; iter++){
+                     #pragma omp for nowait
+                     for (int i = 0; i < n; i++){
+                        double z;
                         #pragma omp atomic read
                         z = r[i];
-                     }
-                     else {
-                        z = r[i];
-                     }
-                     z /= A.diag[i];
-                     (*x)[i] += z;
-                     if (solver->input.atomic_flag == 1){
+                        z /= A.diag[i];
+                        (*x)[i] += z;
                         JacobiRelaxAtomic_CSC(A, &r, z, i);
                      }
-                     else {
-                        AsyncJacobiRelax_CSC(A, &r, z, i);
+                  }
+               }
+               else { /* no atomic */
+                  for (int iter = 0; iter < num_iters; iter++){
+                     #pragma omp for nowait
+                     for (int i = 0; i < n; i++){
+                        double z;
+                        z = r[i];
+                        z /= A.diag[i];
+                        (*x)[i] += z;
+                        JacobiRelax_CSC(A, &r, z, i);
                      }
                   }
                }
             }
          }
+
+
          else {
-            if (solver->input.MsgQ_flag == 1){ /* asynchronous Jacobi with message queues */
+            /*************************
+             * Async Jacobi MsgQ CSR
+             *************************/
+            if (solver->input.MsgQ_flag == 1){
                /* iterate until num_iters (naive convergence detection) */
                for (int iter = 0; iter < num_iters; iter++){
                   #pragma omp for nowait
@@ -160,18 +325,26 @@ void Jacobi(SolverData *solver,
                   }
                }
             }
+            /**************************
+             * Async Jacobi atomic CSR
+             **************************/
             else {
-               /* iterate until num_iters (naive convergence detection) */
-               for (int iter = 0; iter < num_iters; iter++){
-                  #pragma omp for nowait
-                  for (int i = 0; i < n; i++){
-                     double xi;
-                     if (solver->input.atomic_flag){ /* atomically write to memory */
+               if (solver->input.atomic_flag == 1){ /* atomic */
+                  for (int iter = 0; iter < num_iters; iter++){
+                     #pragma omp for nowait
+                     for (int i = 0; i < n; i++){
+                        double xi;
                         xi = AsyncJacobiRelaxAtomic_CSR(A, b, x, i); /* relaxation of element i of x */
                         #pragma omp atomic write
                         (*x)[i] = xi;
                      }
-                     else {
+                  }
+               }
+               else { /* no atomic */
+                  for (int iter = 0; iter < num_iters; iter++){
+                     #pragma omp for nowait
+                     for (int i = 0; i < n; i++){
+                        double xi;
                         xi = AsyncJacobiRelax_CSR(A, b, x, i); /* relaxation of element i of x */
                         (*x)[i] = xi;
                      }
@@ -180,7 +353,23 @@ void Jacobi(SolverData *solver,
             }
          }
       }
+
       solver->output.solve_wtime_vec[tid] = omp_get_wtime() - solve_start;
+
+      if (solver->input.MsgQ_flag == 1){
+         if (solver->input.MsgQ_wtime_flag == 1){
+            solver->output.MsgQ_wtime_vec[tid] = MsgQ_wtime;
+         }
+         else if (solver->input.MsgQ_cycles_flag == 1){
+            solver->output.MsgQ_cycles_vec[tid] = MsgQ_cycles;
+         }
+         else if (solver->input.comp_wtime_flag == 1){
+            solver->output.comp_wtime_vec[tid] = comp_wtime;
+         }
+         else if (solver->input.comp_cycles_flag == 1){
+            solver->output.comp_cycles_vec[tid] = comp_cycles;
+         }
+      }
    }
 
    if (solver->input.MsgQ_flag == 1){
@@ -266,7 +455,7 @@ void JacobiRelaxAtomic_CSC(Matrix A, double **r, double z, int i)
    }
 }
 
-void AsyncJacobiRelax_CSC(Matrix A, double **r, double z, int i)
+void JacobiRelax_CSC(Matrix A, double **r, double z, int i)
 {
    for (int jj = A.start[i]; jj < A.start[i+1]; jj++){
       int ii = A.i[jj];

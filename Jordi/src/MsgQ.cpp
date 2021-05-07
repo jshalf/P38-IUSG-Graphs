@@ -1,5 +1,6 @@
 #include "Main.hpp"
 #include "MsgQ.hpp"
+#include "Misc.hpp"
 
 /* initialize mutex lock */
 void qInitLock(Queue *Q)
@@ -39,13 +40,11 @@ void qPut(Queue *Q,
           double sourceData /* source data */
           )
 {
-   int i = destinationQID;
+   omp_set_lock(&(Q->lock[destinationQID])); /* acquire lock */
 
-   omp_set_lock(&(Q->lock[i])); /* acquire lock */
+   Q->q[destinationQID].push(sourceData); /* push to queue */
 
-   Q->q[i].push(sourceData); /* push to queue */
-
-   omp_unset_lock(&(Q->lock[i])); /* release lock */
+   omp_unset_lock(&(Q->lock[destinationQID])); /* release lock */
 }
 
 int qPoll(Queue *Q,
@@ -54,19 +53,17 @@ int qPoll(Queue *Q,
           )
 {
    int flag = 0;
-   int i = destinationQID;
    double x;
-    
    //omp_set_lock(&(Q->lock[i])); /* acquire lock */
 
-   if (omp_test_lock(&(Q->lock[i]))){
-      if (!(Q->q[i].empty())){ /* if the queue is empty, return zero flag */
+   if (omp_test_lock(&(Q->lock[destinationQID]))){
+      if (!(Q->q[destinationQID].empty())){ /* if the queue is empty, return zero flag */
          /* if queue is not empty, get front and flag of one */
-         *destinationData = Q->q[i].front();
+         *destinationData = Q->q[destinationQID].front();
          flag = 1;
       }
 
-      omp_unset_lock(&(Q->lock[i])); /* release lock */
+      omp_unset_lock(&(Q->lock[destinationQID])); /* release lock */
    }
 
    return flag;
@@ -77,11 +74,9 @@ void qWait(Queue *Q,
            double *destinationData /* destination data */
            )
 {
-   int q_empty = 1;
-   int i = destinationQID;
    double x;
 
-   while (qPoll(Q, i, &x) == 0); /* poll until queue is not empty */
+   while (qPoll(Q, destinationQID, &x) == 0); /* poll until queue is not empty */
 
    *destinationData = x;
 }
@@ -92,36 +87,20 @@ int qGet(Queue *Q,
          double *destinationData /* destination data */
          )
 {
-   int q_empty = 1;
-   int i = destinationQID;
    double x;
    int flag = 0;
-
    //omp_set_lock(&(Q->lock[i])); /* acquire lock */
 
-   if (omp_test_lock(&(Q->lock[i]))){
-      if (!(Q->q[i].empty())){ /* if the queue is empty, return zero flag */
+   if (omp_test_lock(&(Q->lock[destinationQID]))){
+      if (!(Q->q[destinationQID].empty())){ /* if the queue is empty, return zero flag */
          /* if queue is not empty, pop front and flag of one */
-         *destinationData = Q->q[i].front();
-         Q->q[i].pop(); /* pop front */
+         *destinationData = Q->q[destinationQID].front();
+         Q->q[destinationQID].pop(); /* pop front */
          flag = 1;
       }
 
-      omp_unset_lock(&(Q->lock[i])); /* release lock */
+      omp_unset_lock(&(Q->lock[destinationQID])); /* release lock */
    }
 
    return flag;
-}
-
-/* accumulation (assumes single-write/mulitple-read) */
-void qAccum(Queue *Q,
-            int destinationQID, /* destination queue id */
-            double y /* accumulation data */
-            )
-{
-   double x;
-   qWait(Q, destinationQID, &x); /* get the queue data */
-   x += y; /* accumulate */
-   qPut(Q, destinationQID, x); /* push the accum result to the queue */
-   qGet(Q, destinationQID, &x); /* pop off old data */
 }

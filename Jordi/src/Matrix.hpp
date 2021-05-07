@@ -44,6 +44,7 @@ void freadBinaryMatrix(char *mat_file_str,
                        Matrix *A,
                        int include_diag_flag,
                        int csc_flag,
-                       int coo_flag);
+                       int coo_flag,
+                       int mat_type);
 
 #endif

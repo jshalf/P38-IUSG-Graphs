@@ -270,7 +270,8 @@ void freadBinaryMatrix(char *mat_file_str,
                        Matrix *A,
                        int include_diag_flag,
                        int csc_flag,
-                       int coo_flag)
+                       int coo_flag,
+                       int mat_type)
 {
    size_t size;
    int temp_size;
@@ -296,29 +297,32 @@ void freadBinaryMatrix(char *mat_file_str,
    }
 
    vector<int> counts(A->n, 0);
-
-   if (csc_flag == 1 || coo_flag == 1){
-      A->i = (int *)calloc(A->nnz, sizeof(int));
-   }
-   if (csc_flag == 0 || coo_flag == 1){
-      A->j = (int *)calloc(A->nnz, sizeof(int));
-   }
-   A->data = (double *)calloc(A->nnz, sizeof(double));
-   A->start = (int *)calloc(A->n+1, sizeof(int));
-   A->diag = (double *)calloc(A->n, sizeof(double));
+   vector<int> include_elem_flag(file_lines, 1);
 
    for (int k = 1; k < file_lines; k++){
       int row = buffer[k].i-1;
       int col = buffer[k].j-1;
       
-      int include_elem_flag = 1;
+      include_elem_flag[k] = 1;
       if (row == col){
          if (include_diag_flag == 0){
-            include_elem_flag = 0;
+            include_elem_flag[k] = 0;
+         }
+      }
+      else if (row < col){
+         if (mat_type == MATRIX_LOWER){
+            include_elem_flag[k] = 0;
+            A->nnz--;
+         }
+      }
+      else if (row > col){
+         if (mat_type == MATRIX_UPPER){
+            include_elem_flag[k] = 0;
+            A->nnz--;
          }
       }
 
-      if (include_elem_flag == 1){
+      if (include_elem_flag[k] == 1){
          int idx;
          if (csc_flag == 1){
             idx = col;
@@ -330,6 +334,15 @@ void freadBinaryMatrix(char *mat_file_str,
       }
    }
 
+   if (csc_flag == 1 || coo_flag == 1){
+      A->i = (int *)calloc(A->nnz, sizeof(int));
+   }
+   if (csc_flag == 0 || coo_flag == 1){
+      A->j = (int *)calloc(A->nnz, sizeof(int));
+   }
+   A->data = (double *)calloc(A->nnz, sizeof(double));
+   A->start = (int *)calloc(A->n+1, sizeof(int));
+   A->diag = (double *)calloc(A->n, sizeof(double));
    for (int idx = 0; idx < A->n; idx++){
       A->start[idx+1] = A->start[idx] + counts[idx];
       counts[idx] = 0;
@@ -339,17 +352,12 @@ void freadBinaryMatrix(char *mat_file_str,
       int row = buffer[k].i-1;
       int col = buffer[k].j-1;
       double elem = buffer[k].val;
-    
- 
-      int include_elem_flag = 1;
+
       if (row == col){
          A->diag[row] = elem;
-         if (include_diag_flag == 0){
-            include_elem_flag = 0;
-         }
       }
      
-      if (include_elem_flag == 1) {   
+      if (include_elem_flag[k] == 1) {   
          int kk, idx;
          if (csc_flag == 1){
             idx = col;

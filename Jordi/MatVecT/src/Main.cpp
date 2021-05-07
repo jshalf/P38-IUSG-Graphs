@@ -1,5 +1,5 @@
 #include "../../src/Main.hpp"
-#include "MatVec.hpp"
+#include "MatVecT.hpp"
 #include "../../src/Matrix.hpp"
 #include "../../src/Misc.hpp"
 
@@ -12,6 +12,12 @@ int main (int argc, char *argv[])
    mv.input.expand_flag = 0;
    mv.input.coo_flag = 0;
    mv.input.MsgQ_flag = 0;
+   mv.input.comp_wtime_flag = 0;
+   mv.input.MsgQ_wtime_flag = 0;
+   mv.input.comp_cycles_flag = 0;
+   mv.input.MsgQ_cycles_flag = 0;
+   mv.input.comp_noop_flag = 0;
+   mv.input.MsgQ_noop_flag = 0;
    int verbose_output = 0;
    int num_runs = 1;
    int m = 10; 
@@ -41,7 +47,7 @@ int main (int argc, char *argv[])
             mv.input.expand_flag = 1;
          }
       }
-      else if (strcmp(argv[arg_index], "-n") == 0){ /* ``size'' of matrix. n*n rows for Laplace, n rows otherwise. */
+      else if (strcmp(argv[arg_index], "-n") == 0){ /* ``size'' of matrix. n*n rows for Laplace, n rows otherwise */
          arg_index++;
          m = atoi(argv[arg_index]);
       }
@@ -59,14 +65,26 @@ int main (int argc, char *argv[])
       else if (strcmp(argv[arg_index], "-verb_out") == 0){ /* verbose output */
          verbose_output = 1;
       }
-      else if (strcmp(argv[arg_index], "-AAT") == 0){ /* Compute Ax and A^Tx together */
-         mv.input.AAT_flag = 1;
-      }
-      else if (strcmp(argv[arg_index], "-coo") == 0){ /* use coordinate format */
-         mv.input.coo_flag = 1;
-      }
       else if (strcmp(argv[arg_index], "-MsgQ") == 0){ /* use message queues */
          mv.input.MsgQ_flag = 1;
+      }
+      else if (strcmp(argv[arg_index], "-MsgQ_wtime") == 0){
+         mv.input.MsgQ_wtime_flag = 1;
+      }
+      else if (strcmp(argv[arg_index], "-comp_wtime") == 0){
+         mv.input.comp_wtime_flag = 1;
+      }
+      else if (strcmp(argv[arg_index], "-MsgQ_cycles") == 0){
+         mv.input.MsgQ_cycles_flag = 1;
+      }
+      else if (strcmp(argv[arg_index], "-comp_cycles") == 0){
+         mv.input.comp_cycles_flag = 1;
+      }
+      else if (strcmp(argv[arg_index], "-MsgQ_noop") == 0){
+         mv.input.MsgQ_noop_flag = 1;
+      }
+      else if (strcmp(argv[arg_index], "-comp_noop") == 0){
+         mv.input.comp_noop_flag = 1;
       }
       else if (strcmp(argv[arg_index], "-help") == 0){ /* print command line options */
          print_usage = 1;
@@ -88,8 +106,6 @@ int main (int argc, char *argv[])
       printf("-no_atomic:               turn off atomics.  Only meant for performance measurements and will not produce a correct result.\n");
       printf("-num_runs <int value>:    number of independent runs.  Used for data collection.\n");
       printf("-verb_out:                verbose output.\n");
-      printf("-AAT:                     compute both A^Tx and Ax together.\n");
-      printf("-coo:                     use coordinate format instead of Matrix.\n");
       printf("-MsgQ:                    use message queues instead of atomics.\n");
       printf("\n");
       return 0;
@@ -97,12 +113,15 @@ int main (int argc, char *argv[])
    
    omp_set_num_threads(mv.input.num_threads);
 
+   int csc_flag = 0, coo_flag = 0;
+   int include_diag = 1;
+
    /* set up problem */
    Matrix A;
    if (problem_type == PROBLEM_FILE){
       char A_mat_file_str[128];
       sprintf(A_mat_file_str, "%s_A.txt.bin", mat_file_str);
-      freadBinaryMatrix(A_mat_file_str, &A, 1, 0, 1);
+      freadBinaryMatrix(A_mat_file_str, &A, include_diag, csc_flag, coo_flag, MATRIX_NONSYMMETRIC);
 
       //char A_outfile[128];
       //sprintf(A_outfile, "./matlab/A.txt");
@@ -119,84 +138,112 @@ int main (int argc, char *argv[])
    }
 
    double *x = (double *)calloc(num_rows, sizeof(double));
-   double *y1 = (double *)calloc(num_cols, sizeof(double));
-   double *y1_exact = (double *)calloc(num_cols, sizeof(double));
-   double *e1 = (double *)calloc(num_cols, sizeof(double));
-
-   double *y2, *y2_exact, *e2;
-   if (mv.input.AAT_flag == 1){
-      y2 = (double *)calloc(num_rows, sizeof(double));
-      y2_exact = (double *)calloc(num_rows, sizeof(double));
-      e2 = (double *)calloc(num_rows, sizeof(double));
-   }
+   double *y = (double *)calloc(num_cols, sizeof(double));
+   double *y_exact = (double *)calloc(num_cols, sizeof(double));
+   double *e = (double *)calloc(num_cols, sizeof(double));
 
    if (mv.input.expand_flag == 1){
-      mv.y1_expand = (double *)calloc(mv.input.num_threads * num_cols, sizeof(double));
-      mv.y2_expand = (double *)calloc(mv.input.num_threads * num_rows, sizeof(double));
+      mv.y_expand = (double *)calloc(mv.input.num_threads * num_cols, sizeof(double));
+   }
+
+   mv.output.solve_wtime_vec = (double *)calloc(mv.input.num_threads, sizeof(double));
+
+   if (mv.input.MsgQ_wtime_flag == 1){
+      mv.output.MsgQ_wtime_vec = (double *)calloc(mv.input.num_threads, sizeof(double));
+   }
+   else if (mv.input.comp_wtime_flag == 1){
+      mv.output.comp_wtime_vec = (double *)calloc(mv.input.num_threads, sizeof(double));
+   }
+   else if (mv.input.MsgQ_cycles_flag == 1){
+      mv.output.MsgQ_cycles_vec = (uint64_t *)calloc(mv.input.num_threads, sizeof(uint64_t));
+   }
+   else if (mv.input.comp_cycles_flag == 1){
+      mv.output.comp_cycles_vec = (uint64_t *)calloc(mv.input.num_threads, sizeof(uint64_t));
    }
 
    srand(0);
    for (int i = 0; i < num_rows; i++){
       x[i] = RandDouble(-1.0, 1.0);
    } 
+
+   MatVecT_CSR_Seq(&mv, A, x, y_exact);
+
    for (int run = 1; run <= num_runs; run++){
       for (int i = 0; i < num_cols; i++){
-         y1[i] = 0;
-         if (mv.input.AAT_flag == 1){
-            y2[i] = 0;
-         }
+         y[i] = 0;
       }
-      /* serial MatVec (since we are only considering aymmetric matrices right now, Ax = A^Tx).
-       * TODO: handle non-symmetric case.  */ 
-      MatVec_CSR(&mv, A, x, y1_exact);
 
       /* parallel MatVecT */
-      double start = omp_get_wtime();
-      if (mv.input.coo_flag == 1){
-         MatVecT_COO(&mv, A, x, y1, y2);
-      }
-      else {
-         MatVecT_CSR(&mv, A, x, y1, y2);
-      }
-      mv.output.solve_wtime = omp_get_wtime() - start;
+      MatVecT_CSR(&mv, A, x, y);
 
       /* compute error */
       for (int i = 0; i < num_cols; i++){
-         e1[i] = y1_exact[i] - y1[i];
-         //printf("%e %e\n", y1_exact[i], y1[i]);
+         e[i] = y_exact[i] - y[i];
+         //printf("%e %e\n", y_exact[i], y[i]);
       }
-      if (mv.input.AAT_flag == 1){
-         for (int i = 0; i < num_rows; i++){
-            y2_exact[i] = y1_exact[i];
-            e2[i] = y2_exact[i] - y2[i];
-         }
+
+      double error_norm = sqrt(InnerProd(e, e, num_cols))/sqrt(InnerProd(y_exact, y_exact, num_rows));
+
+      double solve_wtime_sum = SumDouble(mv.output.solve_wtime_vec, mv.input.num_threads);
+      mv.output.solve_wtime = solve_wtime_sum / (double)mv.input.num_threads;
+
+      double MsgQ_wtime_sum = 0.0, comp_wtime_sum = 0.0;
+      double MsgQ_wtime_mean = 0.0, comp_wtime_mean = 0.0;
+      uint64_t MsgQ_cycles_sum = 0, comp_cycles_sum = 0;
+      double MsgQ_cycles_mean = 0, comp_cycles_mean = 0;
+      if (mv.input.MsgQ_wtime_flag == 1){
+         MsgQ_wtime_sum = SumDouble(mv.output.MsgQ_wtime_vec, mv.input.num_threads);
+         MsgQ_wtime_mean = MsgQ_wtime_sum / (double)mv.input.num_threads;
       }
-      double error1 = sqrt(InnerProd(e1, e1, num_cols))/sqrt(InnerProd(y1_exact, y1_exact, num_rows));
-      double error2 = 0.0;
-      if (mv.input.AAT_flag == 1) error2 = sqrt(InnerProd(e2, e2, num_rows))/sqrt(InnerProd(y2_exact, y2_exact, num_rows));
+      else if (mv.input.comp_wtime_flag == 1){
+         comp_wtime_sum = SumDouble(mv.output.comp_wtime_vec, mv.input.num_threads);
+         comp_wtime_mean = comp_wtime_sum / (double)mv.input.num_threads;
+      }
+      else if (mv.input.MsgQ_cycles_flag == 1){
+         MsgQ_cycles_sum = accumulate(mv.output.MsgQ_cycles_vec, mv.output.MsgQ_cycles_vec+mv.input.num_threads, 0);
+         MsgQ_cycles_mean = MsgQ_cycles_sum / (double)mv.input.num_threads;
+      }
+      else if (mv.input.comp_cycles_flag == 1){
+         comp_cycles_sum = accumulate(mv.output.comp_cycles_vec, mv.output.comp_cycles_vec+mv.input.num_threads, 0);
+         comp_cycles_mean = comp_cycles_sum / (double)mv.input.num_threads;
+      }
+
       /* print stats */
       if (verbose_output){
-         printf("MatVec wall-clock time %e, AT error L2-norm %e, A error L2-norm = %e\n", mv.output.solve_wtime, error1, error2);
+         printf("MatVec wall-clock time %e\n"
+                "Error L2-norm %e\n",
+                mv.output.solve_wtime,
+                error_norm);
       }
       else {
-         printf("%e %e %e\n", mv.output.solve_wtime, error1, error2);
+         printf("%e %e\n",
+                mv.output.solve_wtime,
+                error_norm);
       }
    }
 
    free(x);
-   free(y1);
-   free(y1_exact);
-   free(e1);
-
-   if (mv.input.AAT_flag == 1){
-      free(y2);
-      free(y2_exact);
-      free(e2);
-   }
+   free(y);
+   free(y_exact);
+   free(e);
 
    if (mv.input.expand_flag == 1){
-      free(mv.y1_expand);
-      free(mv.y2_expand);
+      free(mv.y_expand);
+   }
+
+   free(mv.output.solve_wtime_vec);
+
+   if (mv.input.MsgQ_wtime_flag == 1){
+      free(mv.output.MsgQ_wtime_vec);
+   }
+   else if (mv.input.comp_wtime_flag == 1){
+      free(mv.output.comp_wtime_vec);
+   }
+   else if (mv.input.MsgQ_cycles_flag == 1){
+      free(mv.output.MsgQ_cycles_vec);
+   }
+   else if (mv.input.comp_cycles_flag == 1){
+      free(mv.output.comp_cycles_vec);
    }
 
    return 0;

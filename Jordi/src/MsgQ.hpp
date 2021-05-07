@@ -3,11 +3,21 @@
 
 #include "Main.hpp"
 
+typedef struct {
+   queue<double> *wtime = NULL;
+   queue<int> *idx = NULL;
+   queue<double> *wtime_glob = NULL;
+   double wtime_glob_start;
+   int size;
+} DAG;
+
 /* queue data structure */
 typedef struct {
    queue<double> *q; /* std queue */
    int size = 0; /* size of queue */
    omp_lock_t *lock; /* OpenMP lock */
+   DAG dag;
+   int dag_flag = 0;
 } Queue;
 
 void qInitLock(Queue *Q);
@@ -28,6 +38,10 @@ int qGet(Queue *Q, int destinationQID, double *destinationData);
 
 void qAccum(Queue *Q, int destinationQID, double y);
 
+double qGetWtime(void);
+
 Queue* qGetObj(void);
+
+void qPrintDAG(Queue *Q);
 
 #endif
