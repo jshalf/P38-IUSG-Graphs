@@ -4,9 +4,7 @@
 #include "../../src/Misc.hpp"
 #include "../../src/MsgQ.hpp"
 
-#ifdef USE_SUPERLU
-#include "slu_mt_ddefs.h"
-#endif
+#define TRISOLVE_ATOMIC_COUNTER 10
 
 using namespace std;
 
@@ -63,6 +61,9 @@ int main (int argc, char *argv[])
          }
          else if (strcmp(argv[arg_index], "lev_sched") == 0){ /* classical level-scheduled */
             solver_type = TRISOLVE_LEVEL_SCHEDULED;
+         }
+         else if (strcmp(argv[arg_index], "counter") == 0){
+            solver_type = TRISOLVE_ATOMIC_COUNTER;
          }
       }
       else if (strcmp(argv[arg_index], "-n") == 0){ /* ``size'' of matrix. n*n rows for Laplace, n rows otherwise. */
@@ -267,6 +268,9 @@ int main (int argc, char *argv[])
          TriSolve_LevelSchedule(&ts, ts.L_lvl_set, L, x, b);
 
          LevelSetsDestroy(&(ts.L_lvl_set));
+      }
+      else if (solver_type == TRISOLVE_ATOMIC_COUNTER) {
+         TriSolve_AtomicCounter(&ts, L, x, b);
       }
       else { /* asynchronoues solver */
          TriSolve_Async(&ts, L, x, b);

@@ -4,6 +4,10 @@
 #include "Main.hpp"
 #include "Matrix.hpp"
 
+struct alignas(CACHE_LINE_SIZE) cache {
+   int c;
+};
+
 double RandDouble(double low, double high);
 
 int SumInt(int *x, int n);

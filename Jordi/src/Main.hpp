@@ -29,6 +29,8 @@
 #define ILU_ASYNC 0
 #define ILU_LEVEL_SCHEDULED 1
 
+#define CACHE_LINE_SIZE 64
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>

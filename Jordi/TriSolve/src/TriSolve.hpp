@@ -18,15 +18,15 @@ void TriSolve_LevelSchedule(TriSolveData *ts,
                             double *x,
                             double *b);
 
-void TriSolve_Async_COO(TriSolveData *ts,
-                        Matrix T,
-                        double *x,
-                        double *b);
-
 void TriSolve_Async(TriSolveData *ts,
                     Matrix T,
                     double *x,
                     double *b);
+
+void TriSolve_AtomicCounter(TriSolveData *ts,
+                            Matrix T,
+                            double *x,
+                            double *b);
 
 
 #endif
