@@ -274,13 +274,16 @@ int main (int argc, char *argv[])
          LevelSetsDestroy(&(ts.L_lvl_set));
       }
       else if (solver_type == TRISOLVE_ATOMIC_COUNTER) {
+         ts.output.setup_wtime = 0;
          TriSolve_AtomicCounter(&ts, L, x, b);
       }
       else { /* asynchronoues solver */
+         ts.output.setup_wtime = 0;
          TriSolve_Async(&ts, L, x, b);
-         double setup_wtime_sum = SumDouble(ts.output.setup_wtime_vec, ts.input.num_threads);
-         ts.output.setup_wtime = setup_wtime_sum / (double)ts.input.num_threads;
       }
+
+      double setup_wtime_sum = SumDouble(ts.output.setup_wtime_vec, ts.input.num_threads);
+      ts.output.setup_wtime += setup_wtime_sum / (double)ts.input.num_threads;
 
       double solve_wtime_sum = SumDouble(ts.output.solve_wtime_vec, ts.input.num_threads);
       ts.output.solve_wtime = solve_wtime_sum / (double)ts.input.num_threads;

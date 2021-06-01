@@ -51,12 +51,33 @@ void TriSolve_LevelSchedule(TriSolveData *ts,
 
    #pragma omp parallel
    {
-      double solve_start;
+      double solve_start, setup_start;
       int tid = omp_get_thread_num();
+      int *n_loc, **my_rows, i_loc;
 
-      solve_start = omp_get_wtime();
+      setup_start = omp_get_wtime();
+      n_loc = (int *)calloc(lvl_set.num_levels, sizeof(int));
+      for (int l = 0; l < lvl_set.num_levels; l++){
+         #pragma omp for schedule(static, lump) nowait
+         for (int ii = lvl_set.level_start[l]; ii < lvl_set.level_start[l+1]; ii++){
+            n_loc[l]++;
+         }
+      }
+      my_rows = (int **)calloc(lvl_set.num_levels, sizeof(int *));
+      for (int l = 0; l < lvl_set.num_levels; l++){
+         my_rows[l] = (int *)calloc(n_loc[l], sizeof(int *));
+         i_loc = 0;
+         #pragma omp for schedule(static, lump) nowait
+         for (int ii = lvl_set.level_start[l]; ii < lvl_set.level_start[l+1]; ii++){
+            int i = lvl_set.perm[ii];
+            my_rows[l][i_loc] = i;
+            i_loc++;
+         }
+      }
+      ts->output.setup_wtime_vec[tid] = omp_get_wtime() - setup_start;
 
       int num_relax = 0, num_iters = 0;
+      solve_start = omp_get_wtime();
 
       if (ts->input.mat_storage_type == MATRIX_STORAGE_CSC){
          for (int l = 0; l < lvl_set.num_levels; l++){ /* loop over level sets */
@@ -74,10 +95,10 @@ void TriSolve_LevelSchedule(TriSolveData *ts,
          }
       }
       else {
+         i_loc = 0;
          for (int l = 0; l < lvl_set.num_levels; l++){ /* loop over level sets */
-            #pragma omp for schedule(static, lump) /* parallel loop over elements within level set */
-            for (int ii = lvl_set.level_start[l]; ii < lvl_set.level_start[l+1]; ii++){
-               int i = lvl_set.perm[ii];
+            for (int i_loc = 0; i_loc < n_loc[l]; i_loc++){
+               int i = my_rows[l][i_loc];
                x[i] = b[i];
                for (int jj = T.start[i]; jj < T.start[i+1]; jj++){
                   x[i] -= T.data[jj] * x[T.j[jj]];
@@ -85,13 +106,34 @@ void TriSolve_LevelSchedule(TriSolveData *ts,
                }
                x[i] /= T.diag[i];
             }
+            #pragma omp barrier
             num_iters++;
          }
+
+         //for (int l = 0; l < lvl_set.num_levels; l++){ /* loop over level sets */
+         //   #pragma omp for schedule(static, lump) /* parallel loop over elements within level set */
+         //   for (int ii = lvl_set.level_start[l]; ii < lvl_set.level_start[l+1]; ii++){
+         //      int i = lvl_set.perm[ii];
+         //      x[i] = b[i];
+         //      for (int jj = T.start[i]; jj < T.start[i+1]; jj++){
+         //         x[i] -= T.data[jj] * x[T.j[jj]];
+         //         num_relax++;
+         //      }
+         //      x[i] /= T.diag[i];
+         //   }
+         //   num_iters++;
+         //}
       }
       ts->output.solve_wtime_vec[tid] = omp_get_wtime() - solve_start;
 
       ts->output.num_relax[tid] = num_relax;
       ts->output.num_iters[tid] = num_iters;
+
+      for (int l = 0; l < lvl_set.num_levels; l++){
+         free(my_rows[l]);
+      }
+      free(my_rows);
+      free(n_loc);
    }
 }
 
@@ -322,15 +364,13 @@ void TriSolve_Async(TriSolveData *ts,
                }
             }
             else {
-               my_rows = (int *)calloc(n_loc, sizeof(int));
-               row_counts_loc = (int *)calloc(n_loc, sizeof(int));
-               i_loc = 0;
-               #pragma omp for schedule(static, lump) nowait
-               for (int i = 0; i < n; i++){
-                  my_rows[i_loc] = i;
-                  row_counts_loc[i_loc] = T.start[i+1] - T.start[i];
-                  i_loc++;
-               }
+            }
+            my_rows = (int *)calloc(n_loc, sizeof(int));
+            i_loc = 0;
+            #pragma omp for schedule(static, lump) nowait
+            for (int i = 0; i < n; i++){
+               my_rows[i_loc] = i;
+               i_loc++;
             }
          }
       }
@@ -611,9 +651,8 @@ void TriSolve_Async(TriSolveData *ts,
           *
           **********************/
          else {
-            i_loc = 0;
-            #pragma omp for schedule(static, lump) nowait
-            for (int i = 0; i < n; i++){ /* loop over rows */
+            for (int i_loc = 0; i_loc < n_loc; i_loc++){ /* loop over rows */
+               int i = my_rows[i_loc];
                int jj_start = T.start[i];
                int jj_end = T.start[i+1];
                int jj_diff = jj_end - jj_start;
@@ -644,7 +683,6 @@ void TriSolve_Async(TriSolveData *ts,
                }
 
                jj_loc += jj_diff;
-               i_loc++;
             }
          }
       }
@@ -942,74 +980,49 @@ void TriSolve_Async(TriSolveData *ts,
                 * atomic
                 ************/
                if (atomic_flag == 1){
-                  int i_loc_start = 0;
-                  int i_loc_end = min(ts->input.block_size, n_loc);
-                  int jj_loc_start = 0;
-                  //#pragma omp for schedule(static, lump) nowait
-                  //for (int i = 0; i < n; i++){ /* loop over rows */
-                  while (1){
-                     jj_loc = jj_loc_start;
-                     for (int i_loc = i_loc_start; i_loc < i_loc_end; i_loc++){
-                        int i = my_rows[i_loc];
-                        int jj_start = T.start[i];
-                        int jj_end = T.start[i+1];
-                        int jj_diff = jj_end - jj_start;
-                        //int row_counts = jj_diff;
-                        if (row_counts_loc[i_loc] > 0){
-                           int jj_loc_temp = jj_loc;
-                           for (int jj = jj_start; jj < jj_end; jj++){
-                              if (nz_done_flags_loc[jj_loc_temp] == 0){ /* has this non-zero been used? */
-                                 int j = T.j[jj];
-                                 int row_done_flag_j;
-                                 /* check if x[j] is available */
-                                 #pragma omp atomic read
-                                 row_done_flag_j = row_done_flags[j];//row_done_flag_j = row_done_flags[j].c;
+                  for (int i_loc = 0; i_loc < n_loc; i_loc++){ /* loop over rows */
+                     int i = my_rows[i_loc];
+                     int jj_start = T.start[i];
+                     int jj_end = T.start[i+1];
+                     int jj_diff = jj_end - jj_start;
+                     int row_count_i = jj_diff;
+                     while (row_count_i > 0){ /* loop until x[i] has been completed */
+                        int jj_loc_temp = jj_loc;
+                        for (int jj = jj_start; jj < jj_end; jj++){
+                           if (nz_done_flags_loc[jj_loc_temp] == 0){ /* has this non-zero been used? */
+                              int j = T.j[jj];
+                              int row_done_flag_j;
+                              /* check if x[j] is available (row_counts[j] must be zero) */
+                              #pragma omp atomic read
+                              row_done_flag_j = row_done_flags[j];//row_done_flag_j = row_done_flags[j].c;
 
-                                 /* if x[j] is available, update x[i] and row_counts[i] */
-                                 if (row_done_flag_j == 1){
-                                    x[i] -= T.data[jj] * x[j];
+                              /* if x[j] is available, update x[i] and row_counts[i] */
+                              if (row_done_flag_j == 1){
+                                 x[i] -= T.data[jj] * x[j];
 
-                                    num_relax++;
+                                 num_relax++;
 
-                                    row_counts_loc[i_loc]--;
+                                 row_count_i--;
 
-                                    nz_done_flags_loc[jj_loc_temp] = 1;
-                                 }
+                                 nz_done_flags_loc[jj_loc_temp] = 1;
                               }
-                              jj_loc_temp++;
                            }
+                           jj_loc_temp++;
                         }
-                        if (row_counts_loc[i_loc] == 0){
-                           x[i] /= T.diag[i];
-                           #pragma omp atomic write
-                           row_done_flags[i] = 1;//row_done_flags[i].c = 1;
-                           row_counts_loc[i_loc]--;
-                           i_loc_end++;
-                           i_loc_end = min(i_loc_end, n_loc);
-                        }
-                        if (row_counts_loc[i_loc] == -1 && i_loc == i_loc_start){
-                           i_loc_start++;
-                           i_loc_start = min(i_loc_start, n_loc);
-                           jj_loc_start += jj_diff;
-                        }
-
-                        if (i_loc_start >= n_loc){
-                           break;
-                        }
-
-                        jj_loc += jj_diff;
                      }
-                     if (i_loc_start >= n_loc){
-                        break;
-                     }
+                     x[i] /= T.diag[i];
+                     #pragma omp atomic write
+                     row_done_flags[i] = 1;//row_done_flags[i].c = 1;
+
+                     jj_loc += jj_diff;
                   }
                }
                /************
                 * no atomic
                 ************/
                else {
-                  #pragma omp for schedule(static, lump) nowait
-                  for (int i = 0; i < n; i++){ /* loop over rows */
+                  for (int i_loc = 0; i_loc < n_loc; i_loc++){ /* loop over rows */
+                     int i = my_rows[i_loc];
                      int jj_start = T.start[i];
                      int jj_end = T.start[i+1];
                      int jj_diff = jj_end - jj_start;
@@ -1041,7 +1054,6 @@ void TriSolve_Async(TriSolveData *ts,
                      row_done_flags[i] = 1;//row_done_flags[i].c = 1;
 
                      jj_loc += jj_diff;
-                     i_loc++;
                   }
                }
             }
@@ -1075,6 +1087,13 @@ void TriSolve_Async(TriSolveData *ts,
          else if (ts->input.comp_cycles_flag == 1){
             ts->output.comp_cycles_vec[tid] = comp_cycles;
          }
+
+         if (ts->input.mat_storage_type == MATRIX_STORAGE_CSC){
+
+         }
+         else {
+            free(my_rows);
+         }
       }
       else {
          if (ts->input.mat_storage_type == MATRIX_STORAGE_CSC){
@@ -1088,6 +1107,7 @@ void TriSolve_Async(TriSolveData *ts,
                free(my_nzs);
             }
             else {
+               free(my_rows);
             }
          }
       }
