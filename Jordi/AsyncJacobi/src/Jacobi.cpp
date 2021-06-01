@@ -42,28 +42,27 @@ void Jacobi(SolverData *solver,
       r = (double *)calloc(n, sizeof(double));
    }
 
-   int q_size;
-   vector<vector<int>> put_targets(n);
    double *x_ghost;
-   Queue Q;
+   Queue Q, Q_comm;
    /* set up message queues */
    if (solver->input.MsgQ_flag == 1){
       if (solver->input.mat_storage_type == MATRIX_STORAGE_CSC){
-         q_size = n;
+         qAlloc(&Q, n);
+         qInitLock(&Q);
       }
       else {
          x_ghost = (double *)malloc(nnz * sizeof(double));
          for (int i = 0; i < n; i++){
             for (int jj = A.start[i]; jj < A.start[i+1]; jj++){
                int ii = A.j[jj];
-               put_targets[ii].push_back(jj); /* put targets correspond to non-zeros in this row */
                x_ghost[jj] = (*x)[ii];
             }
          }
-         q_size = nnz;
+         qAlloc(&Q_comm, n);
+         qInitLock(&Q_comm);
+         qAlloc(&Q, nnz);
+         qInitLock(&Q);
       }
-      qAlloc(&Q, q_size);
-      qInitLock(&Q);
    }
 
    #pragma omp parallel
@@ -311,17 +310,34 @@ void Jacobi(SolverData *solver,
              * Async Jacobi MsgQ CSR
              *************************/
             if (solver->input.MsgQ_flag == 1){
+               int n_loc = 0;
+               #pragma omp for nowait
+               for (int i = 0; i < n; i++) n_loc++;
+               vector<vector<int>> put_targets(n_loc);
+               #pragma omp for nowait
+               for (int i = 0; i < n; i++){
+                  for (int jj = A.start[i]; jj < A.start[i+1]; jj++){
+                     int ii = A.j[jj];
+                     qPut(&Q_comm, ii, (double)jj);
+                  }
+               }
                /* iterate until num_iters (naive convergence detection) */
                for (int iter = 0; iter < num_iters; iter++){
+                  int i_loc = 0;
                   #pragma omp for nowait
                   for (int i = 0; i < n; i++){
+                     double target;
+                     if (qGet(&Q_comm, i, &target)){
+                        put_targets[i_loc].push_back((int)target);
+                     }
                      double xi = (*x)[i];
                      xi += AsyncJacobiRelaxMsgQ_CSR(A, b, x_ghost, &Q, i); /* relaxation of element i of x */
                      /* send element i of x using put primitive */
-                     for (int j = 0; j < put_targets[i].size(); j++){
-                        qPut(&Q, put_targets[i][j], xi);
+                     for (int j = 0; j < put_targets[i_loc].size(); j++){
+                        qPut(&Q, put_targets[i_loc][j], xi);
                      }
                      (*x)[i] = xi;
+                     i_loc++;
                   }
                }
             }
@@ -375,6 +391,8 @@ void Jacobi(SolverData *solver,
    if (solver->input.MsgQ_flag == 1){
       if (solver->input.mat_storage_type == MATRIX_STORAGE_CSR){
          free(x_ghost);
+         qDestroyLock(&Q_comm);
+         qFree(&Q_comm);
       }
       qDestroyLock(&Q);
       qFree(&Q);
@@ -389,10 +407,10 @@ void Jacobi(SolverData *solver,
    }
 }
 
-/* **********************************************************
+/************************************************************
  * relaxation routines for different Jacobi implementations
  * (See JacobiRelax() for detailed commensolver) 
- * **********************************************************/ 
+ ************************************************************/ 
 double JacobiRelax_CSR(Matrix A, /* sparse matrix */
                        double *b, /* right-hadn side */
                        double **x, /* current approximation to the solution (output) */

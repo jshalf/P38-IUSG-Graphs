@@ -61,13 +61,19 @@ void MatVecT_CSR(MatVecData *mv,
 
    int q_size;
    Queue Q;
-   int *col_counts;
+   vector<int> row_to_thread;
+   int *t_sum, **t_sum_loc;
    /* set up message queues */
    if (mv->input.MsgQ_flag == 1){
       q_size = num_rows;
       qAlloc(&Q, q_size);
       qInitLock(&Q);
-      col_counts = (int *)calloc(num_rows, sizeof(double));
+      row_to_thread.resize(num_rows);
+      t_sum = (int *)calloc(mv->input.num_threads, sizeof(int));
+      t_sum_loc = (int **)calloc(mv->input.num_threads, sizeof(int *));
+      for (int t = 0; t < mv->input.num_threads; t++){
+         t_sum_loc[t] = (int *)calloc(mv->input.num_threads, sizeof(int *));
+      }
    }
 
    #pragma omp parallel
@@ -77,30 +83,35 @@ void MatVecT_CSR(MatVecData *mv,
 
       double comp_wtime_start, comp_wtime = 0.0, MsgQ_wtime_start, MsgQ_wtime = 0.0;
       uint64_t MsgQ_cycles_start, MsgQ_cycles = 0, comp_cycles_start, comp_cycles = 0;
+      int num_gets;
 
       double *y_loc;
+
+      if (mv->input.MsgQ_flag == 1){
+         #pragma omp for schedule(static, lump)
+         for (int i = 0; i < num_rows; i++){
+            row_to_thread[i] = tid;
+         }
+         #pragma omp for schedule(static, lump)
+         for (int i = 0; i < num_rows; i++){
+            for (int jj = A.start[i]; jj < A.start[i+1]; jj++){
+               int ii = A.j[jj];
+               t_sum_loc[tid][row_to_thread[ii]]++;
+            }
+         }
+         #pragma omp for schedule(static, lump)
+         for (int t = 0; t < mv->input.num_threads; t++){
+            for (int tt = 0; tt < mv->input.num_threads; tt++){
+               t_sum[t] += t_sum_loc[tt][t];
+            }
+         }
+         num_gets = t_sum[tid];
+         y_loc = (double *)calloc(num_rows, sizeof(double));
+      }
   
       double wtime_start = omp_get_wtime();
  
       if (mv->input.MsgQ_flag == 1){
-         #pragma omp for schedule(static, lump) nowait
-         for (int i = 0; i < num_rows; i++){
-            int low = A.start[i];
-            int high = A.start[i+1];
-            for (int jj = low; jj < high; jj++){
-               #pragma omp atomic
-               col_counts[A.j[jj]]++;
-            }
-         }
-         int my_num_gets = 0;
-         int n_loc = 0;
-         #pragma omp for schedule(static, lump) nowait
-         for (int i = 0; i < num_rows; i++){
-            my_num_gets += col_counts[i];
-            n_loc++;
-         }
-         y_loc = (double *)calloc(num_rows, sizeof(double));
-
          /*****************
           *   MsgQ wtime
           *****************/
@@ -117,7 +128,7 @@ void MatVecT_CSR(MatVecData *mv,
                   MsgQ_wtime += omp_get_wtime() - MsgQ_wtime_start;
                }
             }
-            while (my_num_gets > 0){
+            while (num_gets > 0){
                int i_loc = 0;
                #pragma omp for schedule(static, lump) nowait
                for (int i = 0; i < num_rows; i++){
@@ -129,7 +140,7 @@ void MatVecT_CSR(MatVecData *mv,
                      MsgQ_wtime += omp_get_wtime() - MsgQ_wtime_start;
                      if (get_flag == 1){
                         y_loc[i_loc] += z;
-                        my_num_gets--;
+                        num_gets--;
                      }
                   } while(get_flag == 1);
                   i_loc++;
@@ -150,7 +161,7 @@ void MatVecT_CSR(MatVecData *mv,
                   MsgQ_cycles += rdtsc() - MsgQ_cycles_start;
                }
             }
-            while (my_num_gets > 0){
+            while (num_gets > 0){
                int i_loc = 0;
                #pragma omp for schedule(static, lump) nowait
                for (int i = 0; i < num_rows; i++){
@@ -162,7 +173,7 @@ void MatVecT_CSR(MatVecData *mv,
                      MsgQ_cycles += rdtsc() - MsgQ_cycles_start;
                      if (get_flag == 1){
                         y_loc[i_loc] += z;
-                        my_num_gets--;
+                        num_gets--;
                      }
                   } while(get_flag == 1);
                   i_loc++;
@@ -183,7 +194,7 @@ void MatVecT_CSR(MatVecData *mv,
                   qPut(&Q, A.j[jj], z);
                }
             }
-            while (my_num_gets > 0){
+            while (num_gets > 0){
                int i_loc = 0;
                #pragma omp for schedule(static, lump) nowait
                for (int i = 0; i < num_rows; i++){
@@ -195,7 +206,7 @@ void MatVecT_CSR(MatVecData *mv,
                         comp_wtime_start = omp_get_wtime();
                         y_loc[i_loc] += z;
                         comp_wtime += omp_get_wtime() - comp_wtime_start;
-                        my_num_gets--;
+                        num_gets--;
                      }
                   } while(get_flag == 1);
                   i_loc++;
@@ -235,7 +246,7 @@ void MatVecT_CSR(MatVecData *mv,
                   qPut(&Q, A.j[jj], z);
                }
             }
-            while (my_num_gets > 0){
+            while (num_gets > 0){
                int i_loc = 0;
                #pragma omp for schedule(static, lump) nowait
                for (int i = 0; i < num_rows; i++){
@@ -245,7 +256,7 @@ void MatVecT_CSR(MatVecData *mv,
                      get_flag = qGet(&Q, i, &z);
                      if (get_flag == 1){
                         y_loc[i_loc] += z;
-                        my_num_gets--;
+                        num_gets--;
                      }
                   } while(get_flag == 1);
                   i_loc++;
@@ -264,7 +275,7 @@ void MatVecT_CSR(MatVecData *mv,
                   qPut(&Q, A.j[jj], z);
                }
             }
-            while (my_num_gets > 0){
+            while (num_gets > 0){
                int i_loc = 0;
                #pragma omp for schedule(static, lump) nowait
                for (int i = 0; i < num_rows; i++){
@@ -274,7 +285,7 @@ void MatVecT_CSR(MatVecData *mv,
                      get_flag = qGet(&Q, i, &z);
                      if (get_flag == 1){
                         y_loc[i_loc] += z;
-                        my_num_gets--;
+                        num_gets--;
                      }
                   } while(get_flag == 1);
                   i_loc++;
@@ -346,7 +357,11 @@ void MatVecT_CSR(MatVecData *mv,
    }
 
    if (mv->input.MsgQ_flag == 1){
-      free(col_counts);
+      free(t_sum);
+      for (int t = 0; t < mv->input.num_threads; t++){
+         free(t_sum_loc[t]);
+      }
+      free(t_sum_loc);
       qDestroyLock(&Q);
       qFree(&Q);
    }

@@ -124,6 +124,10 @@ int main (int argc, char *argv[])
       else if (strcmp(argv[arg_index], "-comp_noop") == 0){
          ts.input.comp_noop_flag = 1;
       }
+      else if (strcmp(argv[arg_index], "-block_size") == 0){
+         arg_index++;
+         ts.input.block_size = atoi(argv[arg_index]);
+      }
       else if (strcmp(argv[arg_index], "-help") == 0){ /* print command line options */
          print_usage = 1;
       }
@@ -284,7 +288,7 @@ int main (int argc, char *argv[])
       /* compute the error between the serial and parallel solvers */
       for (int i = 0; i < num_rows; i++){
          e_x[i] = x_exact[i] - x[i];
-         //printf("%e %e %e\n", x_exact[i], x[i], L.diag[i]);
+         //printf("%e %e\n", x_exact[i], x[i]);
       }
       double error_x = sqrt(InnerProd(e_x, e_x, num_rows))/sqrt(InnerProd(x_exact, x_exact, num_rows));
       int num_relax_sum = SumInt(ts.output.num_relax, ts.input.num_threads);
