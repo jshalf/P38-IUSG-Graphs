@@ -250,12 +250,13 @@ int main (int argc, char *argv[])
    double seq_start = omp_get_wtime();
    TriSolve_Seq(&ts, L, L_perm, x_exact, b); 
    double seq_wtime = omp_get_wtime() - seq_start;
+   double init_setup_time = 0;
 
    if (ts.input.solver_type == TRISOLVE_LEVEL_SCHEDULED ||
        ts.input.solver_type == TRISOLVE_ASYNC_LEVEL_SCHEDULED){
       start = omp_get_wtime();
       LevelSets(ts.input, L, &(ts.L_lvl_set), 1);
-      ts.output.setup_wtime = omp_get_wtime() - start;
+      init_setup_time = omp_get_wtime() - start;
    }
 
    for (int run = 1; run <= num_runs; run++){
@@ -270,29 +271,31 @@ int main (int argc, char *argv[])
          else if (ts.input.MsgQ_wtime_flag == 1){
             ts.output.MsgQ_wtime_vec[t] = 0.0;
          }
+         else if (ts.input.MsgQ_cycles_flag == 1){
+            ts.output.MsgQ_cycles_vec[t] = 0;
+         }
+         else if (ts.input.comp_cycles_flag == 1){
+            ts.output.comp_cycles_vec[t] = 0;
+         }
       }
+    
+      ts.output.setup_wtime = init_setup_time; 
 
-      //TriSolve_CSR(&ts, L, L_perm, x_exact, b);
-     
-
+      double start = omp_get_wtime();
       /* parallel solver */
       if (ts.input.solver_type == TRISOLVE_LEVEL_SCHEDULED){ /* level-scheduled solver */
-         //start = omp_get_wtime();
-         //LevelSets(L, &(ts.L_lvl_set), 1, csc_flag);
-         //ts.output.setup_wtime = omp_get_wtime() - start;
-
          TriSolve_LevelSchedule(&ts, ts.L_lvl_set, L, x, b);
-
-         //LevelSetsDestroy(&(ts.L_lvl_set));
       }
       else if (ts.input.solver_type == TRISOLVE_ATOMIC_COUNTER) {
          TriSolve_AtomicCounter(&ts, L, x, b);
       }
       else { /* asynchronoues solver */
          TriSolve_Async(&ts, L, x, b);
-         double setup_wtime_sum = SumDouble(ts.output.setup_wtime_vec, ts.input.num_threads);
-         ts.output.setup_wtime = setup_wtime_sum / (double)ts.input.num_threads;
       }
+      double overall_solve_wtime = omp_get_wtime() - start;
+
+      double setup_wtime_sum = SumDouble(ts.output.setup_wtime_vec, ts.input.num_threads);
+      ts.output.setup_wtime += setup_wtime_sum / (double)ts.input.num_threads;
 
       double solve_wtime_sum = SumDouble(ts.output.solve_wtime_vec, ts.input.num_threads);
       ts.output.solve_wtime = solve_wtime_sum / (double)ts.input.num_threads;
@@ -330,7 +333,8 @@ int main (int argc, char *argv[])
 
       /* print output stats */
       if (verbose_output){
-         printf("Solve wall-clock time = %e\n"
+         printf("Overall solve wtime = %e\n"
+                "Solve wall-clock time = %e\n"
                 "Setup wall-clock time = %e\n"
                 "Sequential solver wall-clock time = %e\n"
                 "Solve forward-error L2-norm = %e\n"
@@ -340,6 +344,7 @@ int main (int argc, char *argv[])
                 "Comp wtime = %e\n"
                 "MsgQ cycles = %" PRIu64 "\n"
                 "Comp cycles = %" PRIu64 "\n",
+                overall_solve_wtime,
                 ts.output.solve_wtime,
                 ts.output.setup_wtime,
                 seq_wtime,
@@ -352,7 +357,8 @@ int main (int argc, char *argv[])
                 comp_cycles_sum);
       }
       else {
-         printf("%e %e %e %e %f %f %e %e %" PRIu64 " %" PRIu64 "\n",
+         printf("%e %e %e %e %e %f %f %e %e %" PRIu64 " %" PRIu64 "\n",
+                overall_solve_wtime,
                 ts.output.solve_wtime,
                 ts.output.setup_wtime,
                 seq_wtime,

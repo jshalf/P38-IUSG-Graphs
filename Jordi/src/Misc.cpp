@@ -149,7 +149,7 @@ void LevelSets(InputData input,
          row_done_flags = (int *)calloc(n, sizeof(int));
       }
 
-      #pragma omp parallal
+      #pragma omp parallel
       {
          int i_loc, j_loc, jj_loc, n_loc, nnz_loc;
          int *nz_done_flags_loc;
@@ -177,7 +177,15 @@ void LevelSets(InputData input,
 
          if (input.mat_storage_type == MATRIX_STORAGE_CSC){
             #pragma omp for schedule(static, lump) nowait
-            for (int j = 0; j < n; j++){ /* loop over rows */
+            for (int J = 0; J < n; J++){
+               int j;
+               if (L_flag == 1){
+                  j = J;
+               }
+               else {
+                  j = n-J-1;
+               }
+
                int row_counts_j;
                /* stay idle until element j of x is ready to be used */
                do {
@@ -194,6 +202,7 @@ void LevelSets(InputData input,
             }
          }
          else {
+            jj_loc = 0;
             #pragma omp for schedule(static, lump) nowait
             for (int I = 0; I < n; I++){
                int i;
@@ -218,10 +227,9 @@ void LevelSets(InputData input,
                         #pragma omp atomic read
                         row_done_flag_j = row_done_flags[j];
                         if (row_done_flag_j == 1){
-                           if (max_depth < depth[j]){
-                              max_depth = depth[j];
-                           }
+                           max_depth = max(max_depth, depth[j]);
                            row_count_i--;
+                           nz_done_flags_loc[jj_loc_temp] = 1;
                         }
                      }
                      jj_loc_temp++;
@@ -270,9 +278,7 @@ void LevelSets(InputData input,
             int max_depth = -1;
             for (int kk = A.start[i]; kk < A.start[i+1]; kk++){
                int j = A.j[kk];
-               if (max_depth < depth[j]){
-                  max_depth = depth[j];
-               }
+               max_depth = max(max_depth, depth[j]);
             }
             depth[i] = 1 + max_depth;
          }

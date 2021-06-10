@@ -220,9 +220,20 @@ void TriSolve_Async(TriSolveData *ts,
       }
    }
 
-   int *perm;
+   int *row_perm, *nz_perm;
    if (ts->input.fine_grained_flag == 1){
-      perm = (int *)calloc(n, sizeof(int));
+      row_perm = (int *)calloc(n, sizeof(int));
+      nz_perm = (int *)calloc(nnz, sizeof(int));
+      if (ts->input.solver_type == TRISOLVE_ASYNC_LEVEL_SCHEDULED){
+         int k = 0; 
+         for (int ii = 0; ii < n; ii++){
+            int i = lvl_set.perm[ii];
+            for (int jj = T.start[i]; jj < T.start[i+1]; jj++){
+               nz_perm[k] = jj;
+               k++;
+            }
+         }
+      }
    }
 
    #pragma omp parallel
@@ -247,41 +258,25 @@ void TriSolve_Async(TriSolveData *ts,
       n_loc = 0;
       nnz_loc = 0;
       if (ts->input.fine_grained_flag == 1){
+         #pragma omp for schedule(static, lump) nowait
+         for (int k = 0; k < nnz; k++){
+            nnz_loc++;
+         }
+         my_nzs = (int *)calloc(nnz_loc+1, sizeof(int));
          if (ts->input.solver_type == TRISOLVE_ASYNC_LEVEL_SCHEDULED){
-            for (int l = 0; l < lvl_set.num_levels; l++){
-               for (int ii = lvl_set.level_start[l]; ii < lvl_set.level_start[l+1]; ii++){
-                  int i = lvl_set.perm[ii];
-                  #pragma omp for schedule(static, lump) nowait
-                  for (int jj = T.start[i]; jj < T.start[i+1]; jj++){
-                     nnz_loc++;
-                  }
-               }
-            }
-            my_nzs = (int *)calloc(nnz_loc+1, sizeof(int));
             kk = 0;
-            for (int l = 0; l < lvl_set.num_levels; l++){
-               for (int ii = lvl_set.level_start[l]; ii < lvl_set.level_start[l+1]; ii++){
-                  int i = lvl_set.perm[ii];
-                  #pragma omp for schedule(static, lump) nowait
-                  for (int jj = T.start[i]; jj < T.start[i+1]; jj++){
-                     my_nzs[kk] = jj;
-                     kk++;
-                  }
-               }
+            #pragma omp for schedule(static, lump) nowait
+            for (int k = 0; k < nnz; k++){
+               my_nzs[kk] = nz_perm[k];
+               kk++;
             }
-            my_nzs[kk] = nnz;
-
+            my_nzs[kk] = nz_perm[nnz-1];
             #pragma omp for schedule(static, lump) nowait
             for (int i = 0; i < n; i++){
-               perm[i] = lvl_set.perm[i];
+               row_perm[i] = lvl_set.perm[i];
             }
          }
          else {
-            #pragma omp for schedule(static, lump) nowait
-            for (int k = 0; k < nnz; k++){
-               nnz_loc++;
-            }
-            my_nzs = (int *)calloc(nnz_loc+1, sizeof(int));
             kk = 0;
             #pragma omp for schedule(static, lump) nowait
             for (int k = 0; k < nnz; k++){
@@ -289,34 +284,28 @@ void TriSolve_Async(TriSolveData *ts,
                kk++;
             }
             my_nzs[kk] = nnz;
-
             #pragma omp for schedule(static, lump) nowait
             for (int i = 0; i < n; i++){
-               perm[i] = i;
+               row_perm[i] = i;
             }
          }
       }
       else {
          if (ts->input.solver_type == TRISOLVE_ASYNC_LEVEL_SCHEDULED){ 
-            for (int l = 0; l < lvl_set.num_levels; l++){
-               #pragma omp for schedule(static, lump) nowait
-               for (int ii = lvl_set.level_start[l]; ii < lvl_set.level_start[l+1]; ii++){
-                  n_loc++;
-                  int i = lvl_set.perm[ii];
-                  for (int jj = T.start[i]; jj < T.start[i+1]; jj++){
-                     nnz_loc++;
-                  }
+            #pragma omp for schedule(static, lump) nowait
+            for (int ii = 0; ii < n; ii++){
+               n_loc++;
+               int i = lvl_set.perm[ii];
+               for (int jj = T.start[i]; jj < T.start[i+1]; jj++){
+                  nnz_loc++;
                }
             }
             my_rows = (int *)calloc(n_loc, sizeof(int));
             i_loc = 0;
-            for (int l = 0; l < lvl_set.num_levels; l++){
-               #pragma omp for schedule(static, lump) nowait
-               for (int ii = lvl_set.level_start[l]; ii < lvl_set.level_start[l+1]; ii++){
-                  int i = lvl_set.perm[ii];
-                  my_rows[i_loc] = i;
-                  i_loc++;
-               }
+            #pragma omp for schedule(static, lump) nowait
+            for (int ii = 0; ii < n; ii++){
+               my_rows[i_loc] = lvl_set.perm[ii];
+               i_loc++;
             }
          }
          else {
@@ -1008,7 +997,7 @@ void TriSolve_Async(TriSolveData *ts,
                 ************/
                if (atomic_flag == 1){
                   for (int J = 0; J < n; J++){ /* loop over rows */
-                     int j = perm[J];
+                     int j = row_perm[J];
                      k = my_nzs[kk];
                      int k_start = T.start[j]; 
                      int k_end = T.start[j+1];
@@ -1045,7 +1034,7 @@ void TriSolve_Async(TriSolveData *ts,
                 ************/
                else {
                   for (int J = 0; J < n; J++){ /* loop over rows */
-                     int j = perm[J];
+                     int j = row_perm[J];
                      k = my_nzs[kk];
                      int k_start = T.start[j];
                      int k_end = T.start[j+1];
@@ -1175,7 +1164,7 @@ void TriSolve_Async(TriSolveData *ts,
                 ************/
                if (atomic_flag == 1){
                   for (int I = 0; I < n; I++){ /* loop over rows */
-                     int i = perm[I];
+                     int i = row_perm[I];
                      k = my_nzs[kk];
                      int kk_start = kk;
                      int done_flag;
@@ -1226,7 +1215,7 @@ void TriSolve_Async(TriSolveData *ts,
                 ************/
                else {
                   for (int I = 0; I < n; I++){ /* loop over rows */
-                     int i = perm[I];
+                     int i = row_perm[I];
                      k = my_nzs[kk];
                      int kk_start = kk;
                      int done_flag;
@@ -1459,6 +1448,11 @@ void TriSolve_Async(TriSolveData *ts,
    }
 
    if (ts->input.fine_grained_flag == 1){
-      free(perm);
+      free(nz_perm);
+      free(row_perm);
    }
+
+   //double min_elem = *min_element(ts->output.solve_wtime_vec, ts->output.solve_wtime_vec+ts->input.num_threads);
+   //double max_elem = *max_element(ts->output.solve_wtime_vec, ts->output.solve_wtime_vec+ts->input.num_threads);
+   //printf("%e %e\n", min_elem, max_elem);
 }
