@@ -23,7 +23,11 @@ double Residual2Norm_CSC(Matrix A, /* sparse matrix data (input) */
                          double *b /* right-hand side (input) */
                          );
 
-void LevelSets(Matrix A, LevelSetData *lvl_set, int L_flag, int csc_flag);
+void LevelSets(InputData input,
+               Matrix A, /* matrix data (input) */
+               LevelSetData *lvl_set, /* level set data (output) */
+               int L_flag /* is the matrix lower or upper triangular ? */
+               );
 
 void LevelSetsDestroy(LevelSetData *lvl_set);
 

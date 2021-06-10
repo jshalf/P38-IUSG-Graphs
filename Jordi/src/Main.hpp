@@ -24,6 +24,10 @@
 /* types of solvers used in the TriSolve benchmark */
 #define TRISOLVE_ASYNC 0
 #define TRISOLVE_LEVEL_SCHEDULED 1
+#define TRISOLVE_ASYNC_LEVEL_SCHEDULED 2
+
+#define LEVEL_SETS_SEQ_SETUP 0
+#define LEVEL_SETS_ASYNC_SETUP 1
 
 /* types of solvers used in the ILU benchmark */
 #define ILU_ASYNC 0
@@ -75,6 +79,8 @@ typedef struct{
    int MsgQ_cycles_flag;
    int comp_noop_flag;
    int MsgQ_noop_flag;
+   int symm_flag;
+   int setup_type;
 }InputData;
 
 /* Output data */

@@ -51,17 +51,24 @@ void Jacobi(SolverData *solver,
          qInitLock(&Q);
       }
       else {
-         x_ghost = (double *)malloc(nnz * sizeof(double));
-         for (int i = 0; i < n; i++){
-            for (int jj = A.start[i]; jj < A.start[i+1]; jj++){
-               int ii = A.j[jj];
-               x_ghost[jj] = (*x)[ii];
-            }
+         if (solver->input.symm_flag == 1){
+            r = (double *)calloc(n, sizeof(double));
+            qAlloc(&Q, n);
+            qInitLock(&Q);
          }
-         qAlloc(&Q_comm, n);
-         qInitLock(&Q_comm);
-         qAlloc(&Q, nnz);
-         qInitLock(&Q);
+         else {
+            x_ghost = (double *)malloc(nnz * sizeof(double));
+            for (int i = 0; i < n; i++){
+               for (int jj = A.start[i]; jj < A.start[i+1]; jj++){
+                  int ii = A.j[jj];
+                  x_ghost[jj] = (*x)[ii];
+               }
+            }
+            qAlloc(&Q_comm, n);
+            qInitLock(&Q_comm);
+            qAlloc(&Q, nnz);
+            qInitLock(&Q);
+         }
       }
    }
 
@@ -127,11 +134,10 @@ void Jacobi(SolverData *solver,
  *****************************************************/
       else if (solver_type == ASYNC_JACOBI){
          if (solver->input.mat_storage_type == MATRIX_STORAGE_CSC){
-
-
-
             /*************************
+             * 
              * Async Jacobi MsgQ CSC
+             *
              *************************/
             if (solver->input.MsgQ_flag == 1){
                /*****************
@@ -251,6 +257,9 @@ void Jacobi(SolverData *solver,
                      }
                   }
                }
+               /**********************************************
+                * standard scheme (no timers, no-ops, etc...)
+                **********************************************/
                else {
                   for (int iter = 0; iter < num_iters; iter++){
                      #pragma omp for nowait
@@ -272,8 +281,19 @@ void Jacobi(SolverData *solver,
                }
             }
 
+
+
+
+
+
+
+
+
+
             /***************************
+             * 
              * Async Jacobi atomic CSC
+             *
              ***************************/
             else {
                if (solver->input.atomic_flag == 1){ /* atomic */
@@ -305,44 +325,263 @@ void Jacobi(SolverData *solver,
          }
 
 
+
+
+
+
+
+
+
+
          else {
-            /*************************
-             * Async Jacobi MsgQ CSR
-             *************************/
+            /***********************************
+             * 
+             * SYMMETRIC Async Jacobi MsgQ CSR
+             *
+             ***********************************/
             if (solver->input.MsgQ_flag == 1){
-               int n_loc = 0;
-               #pragma omp for nowait
-               for (int i = 0; i < n; i++) n_loc++;
-               vector<vector<int>> put_targets(n_loc);
-               #pragma omp for nowait
-               for (int i = 0; i < n; i++){
-                  for (int jj = A.start[i]; jj < A.start[i+1]; jj++){
-                     int ii = A.j[jj];
-                     qPut(&Q_comm, ii, (double)jj);
+               if (solver->input.symm_flag == 1){
+                  /*****************
+                   *   MsgQ wtime
+                   *****************/
+                  if (solver->input.MsgQ_wtime_flag == 1){
+                     #pragma omp for nowait
+                     for (int i = 0; i < n; i++) r[i] = b[i];
+                     /* iterate until num_iters (naive convergence detection) */
+                     for (int iter = 0; iter < num_iters; iter++){
+                        #pragma omp for nowait
+                        for (int i = 0; i < n; i++){
+                           double z = r[i] / A.diag[i];
+                           for (int jj = A.start[i]; jj < A.start[i+1]; jj++){
+                              int j = A.j[jj];
+                              double zj = A.data[jj] * z;
+                              MsgQ_wtime_start = omp_get_wtime();
+                              qPut(&Q, j, zj);
+                              MsgQ_wtime += omp_get_wtime() - MsgQ_wtime_start;
+                           }
+                           (*x)[i] += z;
+                           MsgQ_wtime_start = omp_get_wtime();
+                           int get_flag = qGet(&Q, i, &z);
+                           MsgQ_wtime += omp_get_wtime() - MsgQ_wtime_start;
+                           while (get_flag == 1){
+                              r[i] -= z;
+                              get_flag = qGet(&Q, i, &z);
+                           }
+                        }
+                     }
+                  }
+                  /*****************
+                   *   MsgQ cycles
+                   *****************/
+                  else if (solver->input.MsgQ_cycles_flag == 1){
+                     #pragma omp for nowait
+                     for (int i = 0; i < n; i++) r[i] = b[i];
+                     /* iterate until num_iters (naive convergence detection) */
+                     for (int iter = 0; iter < num_iters; iter++){
+                        #pragma omp for nowait
+                        for (int i = 0; i < n; i++){
+                           double z = r[i] / A.diag[i];
+                           for (int jj = A.start[i]; jj < A.start[i+1]; jj++){
+                              int j = A.j[jj];
+                              double zj = A.data[jj] * z;
+                              MsgQ_cycles_start = rdtsc();
+                              qPut(&Q, j, zj);
+                              MsgQ_cycles += rdtsc() - MsgQ_cycles_start;
+                           }
+                           (*x)[i] += z;
+                           MsgQ_cycles_start = rdtsc();
+                           int get_flag = qGet(&Q, i, &z);
+                           MsgQ_cycles += rdtsc() - MsgQ_cycles_start;
+                           while (get_flag == 1){
+                              r[i] -= z;
+                              MsgQ_cycles_start = rdtsc();
+                              get_flag = qGet(&Q, i, &z);
+                              MsgQ_cycles += rdtsc() - MsgQ_cycles_start;
+                           }
+                        }
+                     }
+                  }
+                  /*****************
+                   *   comp wtime
+                   *****************/
+                  else if (solver->input.comp_wtime_flag == 1){
+                     #pragma omp for nowait
+                     for (int i = 0; i < n; i++) r[i] = b[i];
+                     /* iterate until num_iters (naive convergence detection) */
+                     for (int iter = 0; iter < num_iters; iter++){
+                        #pragma omp for nowait
+                        for (int i = 0; i < n; i++){
+                           comp_wtime_start = omp_get_wtime();
+                           double z = r[i] / A.diag[i];
+                           comp_wtime += omp_get_wtime() - comp_wtime_start;
+                           for (int jj = A.start[i]; jj < A.start[i+1]; jj++){
+                              comp_wtime_start = omp_get_wtime();
+                              int j = A.j[jj];
+                              double zj = A.data[jj] * z;
+                              comp_wtime += omp_get_wtime() - comp_wtime_start;
+                              qPut(&Q, j, zj);
+                           }
+                           comp_wtime_start = omp_get_wtime();
+                           (*x)[i] += z;
+                           comp_wtime += omp_get_wtime() - comp_wtime_start;
+                           int get_flag = qGet(&Q, i, &z);
+                           while (get_flag == 1){
+                              comp_wtime_start = omp_get_wtime();
+                              r[i] -= z;
+                              comp_wtime += omp_get_wtime() - comp_wtime_start;
+                              get_flag = qGet(&Q, i, &z);
+                           }
+                        }
+                     }
+                  }
+                  /******************************
+                   *   MsgQ no-op and comp no-op
+                   ******************************/
+                  else if ((solver->input.MsgQ_noop_flag == 1) && (solver->input.comp_noop_flag == 1)){
+                     #pragma omp for nowait
+                     for (int i = 0; i < n; i++) r[i] = b[i];
+                     /* iterate until num_iters (naive convergence detection) */
+                     for (int iter = 0; iter < num_iters; iter++){
+                        #pragma omp for nowait
+                        for (int i = 0; i < n; i++){
+                           for (int jj = A.start[i]; jj < A.start[i+1]; jj++){
+                              int j = A.j[jj];
+                           }
+                        }
+                     }
+                  }
+                  /*****************
+                   *   MsgQ no-op
+                   *****************/
+                  else if (solver->input.MsgQ_noop_flag == 1){
+                     #pragma omp for nowait
+                     for (int i = 0; i < n; i++) r[i] = b[i];
+                     /* iterate until num_iters (naive convergence detection) */
+                     for (int iter = 0; iter < num_iters; iter++){
+                        #pragma omp for nowait
+                        for (int i = 0; i < n; i++){
+                           double z = r[i] / A.diag[i];
+                           for (int jj = A.start[i]; jj < A.start[i+1]; jj++){
+                              int j = A.j[jj];
+                              double zj = A.data[jj] * z;
+                           }
+                           (*x)[i] += z;
+                           r[i] -= z;
+                        }
+                     }
+                  }
+                  /*****************
+                   *   comp no-op
+                   *****************/
+                  else if (solver->input.comp_noop_flag == 1){
+                     #pragma omp for nowait
+                     for (int i = 0; i < n; i++) r[i] = b[i];
+                     /* iterate until num_iters (naive convergence detection) */
+                     for (int iter = 0; iter < num_iters; iter++){
+                        #pragma omp for nowait
+                        for (int i = 0; i < n; i++){
+                           double z;
+                           for (int jj = A.start[i]; jj < A.start[i+1]; jj++){
+                              double zj;
+                              int j = A.j[jj];
+                              qPut(&Q, j, zj);
+                           }
+                           int get_flag = qGet(&Q, i, &z);
+                           while (get_flag == 1){
+                              get_flag = qGet(&Q, i, &z);
+                           }
+                        }
+                     }
+                  }
+                  /**********************************************
+                   * standard scheme (no timers, no-ops, etc...)
+                   **********************************************/
+                  else {
+                     #pragma omp for nowait
+                     for (int i = 0; i < n; i++) r[i] = b[i];
+                     /* iterate until num_iters (naive convergence detection) */
+                     for (int iter = 0; iter < num_iters; iter++){
+                        #pragma omp for nowait
+                        for (int i = 0; i < n; i++){
+                           double z = r[i] / A.diag[i];
+                           for (int jj = A.start[i]; jj < A.start[i+1]; jj++){
+                              int j = A.j[jj];
+                              double zj = A.data[jj] * z;
+                              qPut(&Q, j, zj);
+                           }
+                           (*x)[i] += z;
+                           int get_flag = qGet(&Q, i, &z);
+                           while (get_flag == 1){
+                              r[i] -= z;
+                              get_flag = qGet(&Q, i, &z);
+                           }
+                        }
+                     }
                   }
                }
-               /* iterate until num_iters (naive convergence detection) */
-               for (int iter = 0; iter < num_iters; iter++){
-                  int i_loc = 0;
+
+
+
+
+
+
+
+
+
+
+               /**************************************
+                *
+                * NON-SYMMETRIC Async Jacobi MsgQ CSR
+                *
+                * ************************************/
+               else {
+                  int n_loc = 0;
+                  #pragma omp for nowait
+                  for (int i = 0; i < n; i++) n_loc++;
+                  vector<vector<int>> put_targets(n_loc);
                   #pragma omp for nowait
                   for (int i = 0; i < n; i++){
-                     double target;
-                     if (qGet(&Q_comm, i, &target)){
-                        put_targets[i_loc].push_back((int)target);
+                     for (int jj = A.start[i]; jj < A.start[i+1]; jj++){
+                        int ii = A.j[jj];
+                        qPut(&Q_comm, ii, (double)jj);
                      }
-                     double xi = (*x)[i];
-                     xi += AsyncJacobiRelaxMsgQ_CSR(A, b, x_ghost, &Q, i); /* relaxation of element i of x */
-                     /* send element i of x using put primitive */
-                     for (int j = 0; j < put_targets[i_loc].size(); j++){
-                        qPut(&Q, put_targets[i_loc][j], xi);
+                  }
+                  /* iterate until num_iters (naive convergence detection) */
+                  for (int iter = 0; iter < num_iters; iter++){
+                     int i_loc = 0;
+                     #pragma omp for nowait
+                     for (int i = 0; i < n; i++){
+                        double target;
+                        if (qGet(&Q_comm, i, &target)){
+                           put_targets[i_loc].push_back((int)target);
+                        }
+                        double xi = (*x)[i];
+                        xi += AsyncJacobiRelaxMsgQ_CSR(A, b, x_ghost, &Q, i); /* relaxation of element i of x */
+                        /* send element i of x using put primitive */
+                        for (int j = 0; j < put_targets[i_loc].size(); j++){
+                           qPut(&Q, put_targets[i_loc][j], xi);
+                        }
+                        (*x)[i] = xi;
+                        i_loc++;
                      }
-                     (*x)[i] = xi;
-                     i_loc++;
                   }
                }
             }
+
+
+
+
+
+
+
+
+
+
+
             /**************************
+             * 
              * Async Jacobi atomic CSR
+             *
              **************************/
             else {
                if (solver->input.atomic_flag == 1){ /* atomic */
@@ -390,9 +629,14 @@ void Jacobi(SolverData *solver,
 
    if (solver->input.MsgQ_flag == 1){
       if (solver->input.mat_storage_type == MATRIX_STORAGE_CSR){
-         free(x_ghost);
-         qDestroyLock(&Q_comm);
-         qFree(&Q_comm);
+         if (solver->input.symm_flag == 1){
+            free(r);
+         }
+         else {
+            free(x_ghost);
+            qDestroyLock(&Q_comm);
+            qFree(&Q_comm);
+         }
       }
       qDestroyLock(&Q);
       qFree(&Q);

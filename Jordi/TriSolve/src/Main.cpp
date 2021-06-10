@@ -27,11 +27,12 @@ int main (int argc, char *argv[])
    ts.input.MsgQ_cycles_flag = 0;
    ts.input.comp_noop_flag = 0;
    ts.input.MsgQ_noop_flag = 0;
+   ts.input.solver_type = TRISOLVE_ASYNC;
+   ts.input.setup_type = LEVEL_SETS_SEQ_SETUP;
    int verbose_output = 0;
    int num_runs = 1;
    int m = 10; 
    int max_row_nnz = 3;
-   int solver_type = TRISOLVE_ASYNC;
    int problem_type = PROBLEM_RANDOM;
    double start;
    char mat_file_str[128];
@@ -57,13 +58,25 @@ int main (int argc, char *argv[])
       else if (strcmp(argv[arg_index], "-solver") == 0){ /* solver type */
          arg_index++;
          if (strcmp(argv[arg_index], "async") == 0){ /* asynchronous */
-            solver_type = TRISOLVE_ASYNC;
+            ts.input.solver_type = TRISOLVE_ASYNC;
          }
          else if (strcmp(argv[arg_index], "lev_sched") == 0){ /* classical level-scheduled */
-            solver_type = TRISOLVE_LEVEL_SCHEDULED;
+            ts.input.solver_type = TRISOLVE_LEVEL_SCHEDULED;
+         }
+         else if (strcmp(argv[arg_index], "async_lev_sched") == 0){ /* asynchronous using level-set info */
+            ts.input.solver_type = TRISOLVE_ASYNC_LEVEL_SCHEDULED;
          }
          else if (strcmp(argv[arg_index], "counter") == 0){
-            solver_type = TRISOLVE_ATOMIC_COUNTER;
+            ts.input.solver_type = TRISOLVE_ATOMIC_COUNTER;
+         }
+      }
+      else if (strcmp(argv[arg_index], "-setup") == 0){ /* solver type */
+         arg_index++;
+         if (strcmp(argv[arg_index], "async") == 0){ /* asynchronous */
+            ts.input.setup_type = LEVEL_SETS_ASYNC_SETUP;
+         }
+         else if (strcmp(argv[arg_index], "seq") == 0){ /* classical level-scheduled */
+            ts.input.setup_type = LEVEL_SETS_SEQ_SETUP;
          }
       }
       else if (strcmp(argv[arg_index], "-n") == 0){ /* ``size'' of matrix. n*n rows for Laplace, n rows otherwise. */
@@ -197,13 +210,6 @@ int main (int argc, char *argv[])
    num_rows = L.n;
    
    ts.output.setup_wtime = 0.0;
-   /* set up for level scheduling method */
-   if (solver_type == TRISOLVE_LEVEL_SCHEDULED){
-     // start = omp_get_wtime();
-     // LevelSchedule(L, &(ts.L_lvl_set), 1);
-     // //LevelSchedule(U, &(ts.U_lvl_set), 0);
-     // ts.output.setup_wtime = omp_get_wtime() - start;
-   }
    /* set up stuff for serial solver */
    int *L_perm = (int *)calloc(num_rows, sizeof(int));
    //int *U_perm = (int *)calloc(num_rows, sizeof(int));
@@ -245,6 +251,13 @@ int main (int argc, char *argv[])
    TriSolve_Seq(&ts, L, L_perm, x_exact, b); 
    double seq_wtime = omp_get_wtime() - seq_start;
 
+   if (ts.input.solver_type == TRISOLVE_LEVEL_SCHEDULED ||
+       ts.input.solver_type == TRISOLVE_ASYNC_LEVEL_SCHEDULED){
+      start = omp_get_wtime();
+      LevelSets(ts.input, L, &(ts.L_lvl_set), 1);
+      ts.output.setup_wtime = omp_get_wtime() - start;
+   }
+
    for (int run = 1; run <= num_runs; run++){
       for (int t = 0; t < ts.input.num_threads; t++){
          ts.output.solve_wtime_vec[t] = 0.0;
@@ -263,27 +276,23 @@ int main (int argc, char *argv[])
      
 
       /* parallel solver */
-      if (solver_type == TRISOLVE_LEVEL_SCHEDULED){ /* level-scheduled solver */
-         start = omp_get_wtime();
-         LevelSets(L, &(ts.L_lvl_set), 1, csc_flag);
-         //LevelSchedule(U, &(ts.U_lvl_set), 0);
-         ts.output.setup_wtime = omp_get_wtime() - start;
+      if (ts.input.solver_type == TRISOLVE_LEVEL_SCHEDULED){ /* level-scheduled solver */
+         //start = omp_get_wtime();
+         //LevelSets(L, &(ts.L_lvl_set), 1, csc_flag);
+         //ts.output.setup_wtime = omp_get_wtime() - start;
 
          TriSolve_LevelSchedule(&ts, ts.L_lvl_set, L, x, b);
 
-         LevelSetsDestroy(&(ts.L_lvl_set));
+         //LevelSetsDestroy(&(ts.L_lvl_set));
       }
-      else if (solver_type == TRISOLVE_ATOMIC_COUNTER) {
-         ts.output.setup_wtime = 0;
+      else if (ts.input.solver_type == TRISOLVE_ATOMIC_COUNTER) {
          TriSolve_AtomicCounter(&ts, L, x, b);
       }
       else { /* asynchronoues solver */
-         ts.output.setup_wtime = 0;
          TriSolve_Async(&ts, L, x, b);
+         double setup_wtime_sum = SumDouble(ts.output.setup_wtime_vec, ts.input.num_threads);
+         ts.output.setup_wtime = setup_wtime_sum / (double)ts.input.num_threads;
       }
-
-      double setup_wtime_sum = SumDouble(ts.output.setup_wtime_vec, ts.input.num_threads);
-      ts.output.setup_wtime += setup_wtime_sum / (double)ts.input.num_threads;
 
       double solve_wtime_sum = SumDouble(ts.output.solve_wtime_vec, ts.input.num_threads);
       ts.output.solve_wtime = solve_wtime_sum / (double)ts.input.num_threads;

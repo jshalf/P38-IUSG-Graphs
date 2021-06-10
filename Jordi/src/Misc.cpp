@@ -126,45 +126,162 @@ double Residual2Norm_CSC(Matrix A, /* sparse matrix data (input) */
 }
 
 /* Compute level sets for level scheduling algorithms */
-void LevelSets(Matrix A, /* matrix data (input) */
-              LevelSetData *lvl_set, /* level set data (output) */
-              int L_flag, /* is the matrix lower or upper triangular ? */
-              int csc_flag /* is the matrix in CSC format? */
-              )
+void LevelSets(InputData input,
+               Matrix A, /* matrix data (input) */
+               LevelSetData *lvl_set, /* level set data (output) */
+               int L_flag /* is the matrix lower or upper triangular ? */
+               )
 {
    int n = A.n;
+   int nnz = A.nnz;
    vector<int> depth(n, -1), level_size(n, 0);
    lvl_set->perm = (int *)calloc(n, sizeof(int));
-   lvl_set->num_levels = 0;
+   int lump = 1;
+
    /* loop over all nodes to compute depths which are levels */
-   for (int I = 0; I < n; I++){
-      int i;
-      if (L_flag == 1){ 
-         i = I;
+   if (input.setup_type == LEVEL_SETS_ASYNC_SETUP){
+
+      int *row_done_flags, *row_counts;
+      if (input.mat_storage_type == MATRIX_STORAGE_CSC){
+         row_counts = (int *)calloc(n, sizeof(int));
       }
       else {
-         i = n-I-1;
-      }
-      int max_depth;
-      
-      if (csc_flag == 1){
-         depth[i]++;
-         for (int kk = A.start[i]; kk < A.start[i+1]; kk++){
-            int j = A.i[kk];
-            depth[j] = max(depth[j], depth[i]);
-         }
-      }
-      else {
-         int max_depth = -1;
-         for (int kk = A.start[i]; kk < A.start[i+1]; kk++){
-            int j = A.j[kk];
-            if (max_depth < depth[j]){
-               max_depth = depth[j];
-            }
-         }
-         depth[i] = 1 + max_depth;
+         row_done_flags = (int *)calloc(n, sizeof(int));
       }
 
+      #pragma omp parallal
+      {
+         int i_loc, j_loc, jj_loc, n_loc, nnz_loc;
+         int *nz_done_flags_loc;
+
+         n_loc = 0;
+         nnz_loc = 0;
+         #pragma omp for schedule(static, lump) nowait
+         for (int i = 0; i < n; i++){
+            n_loc++;
+            for (int jj = A.start[i]; jj < A.start[i+1]; jj++){
+               nnz_loc++;
+            }
+         }
+
+         if (input.mat_storage_type == MATRIX_STORAGE_CSC){
+            #pragma omp for schedule(static, lump) nowait
+            for (int k = 0; k < nnz; k++){
+               #pragma omp atomic
+               row_counts[A.i[k]]++;
+            }
+         }
+         else {
+            nz_done_flags_loc = (int *)calloc(nnz_loc, sizeof(int));
+         }
+
+         if (input.mat_storage_type == MATRIX_STORAGE_CSC){
+            #pragma omp for schedule(static, lump) nowait
+            for (int j = 0; j < n; j++){ /* loop over rows */
+               int row_counts_j;
+               /* stay idle until element j of x is ready to be used */
+               do {
+                  #pragma omp atomic read
+                  row_counts_j = row_counts[j];
+               } while (row_counts_j > 0);
+               depth[j]++;
+               for (int kk = A.start[j]; kk < A.start[j+1]; kk++){
+                  int i = A.i[kk];
+                  depth[i] = max(depth[i], depth[j]);
+                  #pragma omp atomic
+                  row_counts[i]--;
+               }
+            }
+         }
+         else {
+            #pragma omp for schedule(static, lump) nowait
+            for (int I = 0; I < n; I++){
+               int i;
+               if (L_flag == 1){
+                  i = I;
+               }
+               else {
+                  i = n-I-1;
+               }
+
+               int max_depth = -1;
+               int jj_start = A.start[i];
+               int jj_end = A.start[i+1];
+               int jj_diff = jj_end - jj_start;
+               int row_count_i = jj_diff;
+               while (row_count_i > 0){
+                  int jj_loc_temp = jj_loc;
+                  for (int jj = jj_start; jj < jj_end; jj++){
+                     if (nz_done_flags_loc[jj_loc_temp] == 0){
+                        int j = A.j[jj];
+                        int row_done_flag_j;
+                        #pragma omp atomic read
+                        row_done_flag_j = row_done_flags[j];
+                        if (row_done_flag_j == 1){
+                           if (max_depth < depth[j]){
+                              max_depth = depth[j];
+                           }
+                           row_count_i--;
+                        }
+                     }
+                     jj_loc_temp++;
+                  }
+               }
+               depth[i] = 1 + max_depth;
+               #pragma omp atomic write
+               row_done_flags[i] = 1;
+               jj_loc += jj_diff;
+            }
+         }
+
+         if (input.mat_storage_type == MATRIX_STORAGE_CSC){
+
+         }
+         else {
+            free(nz_done_flags_loc);
+         }
+      }
+
+      if (input.mat_storage_type == MATRIX_STORAGE_CSC){
+         free(row_counts);
+      }
+      else {
+         free(row_done_flags);
+      }
+   }
+   else {
+      for (int I = 0; I < n; I++){
+         int i;
+         if (L_flag == 1){ 
+            i = I;
+         }
+         else {
+            i = n-I-1;
+         }
+         
+         if (input.mat_storage_type == MATRIX_STORAGE_CSC){
+            depth[i]++;
+            for (int kk = A.start[i]; kk < A.start[i+1]; kk++){
+               int j = A.i[kk];
+               depth[j] = max(depth[j], depth[i]);
+            }
+         }
+         else {
+            int max_depth = -1;
+            for (int kk = A.start[i]; kk < A.start[i+1]; kk++){
+               int j = A.j[kk];
+               if (max_depth < depth[j]){
+                  max_depth = depth[j];
+               }
+            }
+            depth[i] = 1 + max_depth;
+         }
+      }
+   }
+
+
+   lvl_set->num_levels = 0;
+   for (int i = 0; i < n; i++){
       level_size[depth[i]]++;
       if (lvl_set->num_levels < depth[i]){
          lvl_set->num_levels = depth[i];

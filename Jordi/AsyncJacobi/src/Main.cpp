@@ -19,6 +19,7 @@ int main (int argc, char *argv[])
    solver.input.MsgQ_cycles_flag = 0;
    solver.input.comp_noop_flag = 0;
    solver.input.MsgQ_noop_flag = 0;
+   solver.input.symm_flag = 1;
    int verbose_output = 0;
    int num_runs = 1;
    int m = 10; 
