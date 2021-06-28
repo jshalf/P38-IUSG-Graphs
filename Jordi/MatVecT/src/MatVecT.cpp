@@ -9,12 +9,12 @@ void MatVec_CSR(MatVecData *mv,
                 double *y /* result of Ax */
                 )
 {
+   int num_rows = A.n;
    int lump = 1;
 
    #pragma omp parallel
    {
       double Axi;
-      int num_rows = A.n;
 
       #pragma omp for schedule(static, lump)
       for (int i = 0; i < num_rows; i++){
@@ -84,6 +84,7 @@ void MatVecT_CSR(MatVecData *mv,
       double comp_wtime_start, comp_wtime = 0.0, MsgQ_wtime_start, MsgQ_wtime = 0.0;
       uint64_t MsgQ_cycles_start, MsgQ_cycles = 0, comp_cycles_start, comp_cycles = 0;
       int num_gets;
+      double dummy = 0.0;
 
       double *y_loc;
 
@@ -123,8 +124,9 @@ void MatVecT_CSR(MatVecData *mv,
                for (int jj = low; jj < high; jj++){
                   double z;
                   z = A.data[jj] * x[i];
+                  int j = A.j[jj];
                   MsgQ_wtime_start = omp_get_wtime();
-                  qPut(&Q, A.j[jj], z);
+                  qPut(&Q, j, z);
                   MsgQ_wtime += omp_get_wtime() - MsgQ_wtime_start;
                }
             }
@@ -132,17 +134,18 @@ void MatVecT_CSR(MatVecData *mv,
                int i_loc = 0;
                #pragma omp for schedule(static, lump) nowait
                for (int i = 0; i < num_rows; i++){
-                  double z;
+                  double z, z_accum = 0.0;
                   int get_flag;
                   do {
                      MsgQ_wtime_start = omp_get_wtime();
                      get_flag = qGet(&Q, i, &z);
                      MsgQ_wtime += omp_get_wtime() - MsgQ_wtime_start;
                      if (get_flag == 1){
-                        y_loc[i_loc] += z;
+                        z_accum += z;
                         num_gets--;
                      }
                   } while(get_flag == 1);
+                  y_loc[i_loc] += z_accum;
                   i_loc++;
                }
             }
@@ -153,11 +156,14 @@ void MatVecT_CSR(MatVecData *mv,
          else if (mv->input.MsgQ_cycles_flag == 1){
             #pragma omp for schedule(static, lump) nowait
             for (int i = 0; i < num_rows; i++){
-               for (int jj = A.start[i]; jj < A.start[i+1]; jj++){
+               int low = A.start[i];
+               int high = A.start[i+1];
+               for (int jj = low; jj < high; jj++){
                   double z;
                   z = A.data[jj] * x[i];
+                  int j = A.j[jj];
                   MsgQ_cycles_start = rdtsc();
-                  qPut(&Q, A.j[jj], z);
+                  qPut(&Q, j, z);
                   MsgQ_cycles += rdtsc() - MsgQ_cycles_start;
                }
             }
@@ -186,30 +192,38 @@ void MatVecT_CSR(MatVecData *mv,
          else if (mv->input.comp_wtime_flag == 1){
             #pragma omp for schedule(static, lump) nowait
             for (int i = 0; i < num_rows; i++){
-               for (int jj = A.start[i]; jj < A.start[i+1]; jj++){
+               comp_wtime_start = omp_get_wtime();
+               int low = A.start[i];
+               int high = A.start[i+1];
+               comp_wtime += omp_get_wtime() - comp_wtime_start;
+               for (int jj = low; jj < high; jj++){
                   double z;
                   comp_wtime_start = omp_get_wtime();
                   z = A.data[jj] * x[i];
+                  int j = A.j[jj];
                   comp_wtime += omp_get_wtime() - comp_wtime_start;
-                  qPut(&Q, A.j[jj], z);
+                  qPut(&Q, j, z);
                }
             }
             while (num_gets > 0){
                int i_loc = 0;
                #pragma omp for schedule(static, lump) nowait
                for (int i = 0; i < num_rows; i++){
-                  double z;
+                  double z, z_accum = 0.0;
                   int get_flag;
                   do {
                      get_flag = qGet(&Q, i, &z);
                      if (get_flag == 1){
                         comp_wtime_start = omp_get_wtime();
-                        y_loc[i_loc] += z;
-                        comp_wtime += omp_get_wtime() - comp_wtime_start;
+                        z_accum += z;
                         num_gets--;
+                        comp_wtime += omp_get_wtime() - comp_wtime_start;
                      }
                   } while(get_flag == 1);
+                  comp_wtime_start = omp_get_wtime();
+                  y_loc[i_loc] += z_accum;
                   i_loc++;
+                  comp_wtime += omp_get_wtime() - comp_wtime_start;
                }
             }
          }
@@ -219,7 +233,11 @@ void MatVecT_CSR(MatVecData *mv,
          else if ((mv->input.MsgQ_noop_flag == 1) && (mv->input.comp_noop_flag == 1)){
             #pragma omp for schedule(static, lump) nowait
             for (int i = 0; i < num_rows; i++){
-               for (int jj = A.start[i]; jj < A.start[i+1]; jj++){
+               int low = A.start[i];
+               int high = A.start[i+1];
+               for (int jj = low; jj < high; jj++){
+                  int j = A.j[jj];
+                  dummy += j;
                }
             }
          }
@@ -229,10 +247,20 @@ void MatVecT_CSR(MatVecData *mv,
          else if (mv->input.MsgQ_noop_flag == 1){
             #pragma omp for schedule(static, lump) nowait
             for (int i = 0; i < num_rows; i++){
-               for (int jj = A.start[i]; jj < A.start[i+1]; jj++){
+               int low = A.start[i];
+               int high = A.start[i+1];
+               for (int jj = low; jj < high; jj++){
                   double z;
                   z = A.data[jj] * x[i];
+                  dummy += z;
                }
+            }
+            int i_loc = 0;
+            #pragma omp for schedule(static, lump) nowait
+            for (int i = 0; i < num_rows; i++){
+               double z, z_accum = (double)rand();
+               y_loc[i_loc] += z_accum;
+               i_loc++;
             }
          }
          /******************************
@@ -241,53 +269,58 @@ void MatVecT_CSR(MatVecData *mv,
          else if (mv->input.comp_noop_flag == 1){
             #pragma omp for schedule(static, lump) nowait
             for (int i = 0; i < num_rows; i++){
-               for (int jj = A.start[i]; jj < A.start[i+1]; jj++){
+               int low = A.start[i];
+               int high = A.start[i+1];
+               for (int jj = low; jj < high; jj++){
                   double z;
-                  qPut(&Q, A.j[jj], z);
+                  int j = A.j[jj];
+                  qPut(&Q, j, z);
                }
             }
             while (num_gets > 0){
-               int i_loc = 0;
                #pragma omp for schedule(static, lump) nowait
                for (int i = 0; i < num_rows; i++){
-                  double z;
+                  double z, z_accum = 0.0;
                   int get_flag;
                   do {
                      get_flag = qGet(&Q, i, &z);
                      if (get_flag == 1){
-                        y_loc[i_loc] += z;
+                        z_accum += z;
                         num_gets--;
                      }
                   } while(get_flag == 1);
-                  i_loc++;
                }
             }
          }
-         /**********************************************
-          * standard scheme (no timers, no-ops, etc...)
-          **********************************************/
+         /*************************************************
+          * standard scheme (no timers, no no-ops, etc...)
+          *************************************************/
          else {
             #pragma omp for schedule(static, lump) nowait
             for (int i = 0; i < num_rows; i++){
-               for (int jj = A.start[i]; jj < A.start[i+1]; jj++){
+               int low = A.start[i];
+               int high = A.start[i+1];
+               for (int jj = low; jj < high; jj++){
                   double z;
                   z = A.data[jj] * x[i];
-                  qPut(&Q, A.j[jj], z);
+                  int j = A.j[jj];
+                  qPut(&Q, j, z);
                }
             }
             while (num_gets > 0){
                int i_loc = 0;
                #pragma omp for schedule(static, lump) nowait
                for (int i = 0; i < num_rows; i++){
-                  double z;
+                  double z, z_accum = 0.0;
                   int get_flag;
                   do {
                      get_flag = qGet(&Q, i, &z);
                      if (get_flag == 1){
-                        y_loc[i_loc] += z;
+                        z_accum += z;
                         num_gets--;
                      }
                   } while(get_flag == 1);
+                  y_loc[i_loc] += z_accum;
                   i_loc++;
                }
             }
@@ -353,6 +386,8 @@ void MatVecT_CSR(MatVecData *mv,
          else if (mv->input.comp_cycles_flag == 1){
             mv->output.comp_cycles_vec[tid] = comp_cycles;
          }
+
+         PrintDummy(dummy);
       }
    }
 

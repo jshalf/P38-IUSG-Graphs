@@ -353,6 +353,8 @@ void freadBinaryMatrix(char *mat_file_str,
       int col = buffer[k].j-1;
       double elem = buffer[k].val;
 
+      if (elem == 0.0) elem = 1.0;
+
       if (row == col){
          A->diag[row] = elem;
       }

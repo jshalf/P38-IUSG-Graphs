@@ -331,3 +331,14 @@ uint64_t rdtsc(){
     return ((uint64_t)hi << 32) | lo;
 }
 #endif
+
+void PrintDummy(double dummy)
+{
+   int tid = omp_get_thread_num();
+   char dummy_filename[100];
+   sprintf(dummy_filename, "dummy_%d_%jd.txt", tid, (intmax_t)time(NULL));
+   FILE *dummy_file = fopen(dummy_filename, "w");
+   fprintf(dummy_file, "%e\n", dummy);
+   fclose(dummy_file);
+   remove(dummy_filename);
+}

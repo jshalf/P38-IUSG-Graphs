@@ -120,7 +120,7 @@ int main (int argc, char *argv[])
    Matrix A;
    if (problem_type == PROBLEM_FILE){
       char A_mat_file_str[128];
-      sprintf(A_mat_file_str, "%s_A.txt.bin", mat_file_str);
+      sprintf(A_mat_file_str, "%s", mat_file_str);
       freadBinaryMatrix(A_mat_file_str, &A, include_diag, csc_flag, coo_flag, MATRIX_NONSYMMETRIC);
 
       //char A_outfile[128];
@@ -211,14 +211,26 @@ int main (int argc, char *argv[])
       /* print stats */
       if (verbose_output){
          printf("MatVec wall-clock time %e\n"
-                "Error L2-norm %e\n",
+                "Error L2-norm %e\n"
+                "MsgQ wtime = %e\n"
+                "Comp wtime = %e\n"
+                "MsgQ cycles = %" PRIu64 "\n"
+                "Comp cycles = %" PRIu64 "\n",
                 mv.output.solve_wtime,
-                error_norm);
+                error_norm,
+                MsgQ_wtime_sum,
+                comp_wtime_sum,
+                MsgQ_cycles_sum,
+                comp_cycles_sum);
       }
       else {
-         printf("%e %e\n",
+         printf("%e %e %e %e %" PRIu64 " %" PRIu64 "\n",
                 mv.output.solve_wtime,
-                error_norm);
+                error_norm,
+                MsgQ_wtime_sum,
+                comp_wtime_sum,
+                MsgQ_cycles_sum,
+                comp_cycles_sum);
       }
    }
 

@@ -190,7 +190,7 @@ int main (int argc, char *argv[])
    if (problem_type == PROBLEM_FILE){
       mat_type = MATRIX_LOWER;
       char L_mat_file_str[128];
-      sprintf(L_mat_file_str, "%s_A.txt.bin", mat_file_str);
+      sprintf(L_mat_file_str, "%s", mat_file_str);
       freadBinaryMatrix(L_mat_file_str, &L, 0, csc_flag, coo_flag, mat_type);
    }
    else { 
@@ -252,11 +252,20 @@ int main (int argc, char *argv[])
    double seq_wtime = omp_get_wtime() - seq_start;
    double init_setup_time = 0;
 
+   int lvl_n_min = 0, lvl_n_max = 0, num_lvls = 0;
+   double lvl_n_mean = 0.0;
    if (ts.input.solver_type == TRISOLVE_LEVEL_SCHEDULED ||
        ts.input.solver_type == TRISOLVE_ASYNC_LEVEL_SCHEDULED){
       start = omp_get_wtime();
       LevelSets(ts.input, L, &(ts.L_lvl_set), 1);
       init_setup_time = omp_get_wtime() - start;
+      
+      if (verbose_output == 1){
+         lvl_n_min = *min_element(ts.L_lvl_set.level_size.begin(), ts.L_lvl_set.level_size.end());
+         lvl_n_max = *max_element(ts.L_lvl_set.level_size.begin(), ts.L_lvl_set.level_size.end());
+         lvl_n_mean = (double)accumulate(ts.L_lvl_set.level_size.begin(), ts.L_lvl_set.level_size.end(), 0) / ts.L_lvl_set.level_size.size(); 
+         num_lvls = ts.L_lvl_set.level_size.size();
+      }
    }
 
    for (int run = 1; run <= num_runs; run++){
@@ -355,9 +364,12 @@ int main (int argc, char *argv[])
                 comp_wtime_sum,
                 MsgQ_cycles_sum,
                 comp_cycles_sum);
+         printf("Num. level sets = %d\n"
+                "Rows per level (min, max, mean) = (%d, %d, %f)\n",
+                num_lvls, lvl_n_min, lvl_n_max, lvl_n_mean);
       }
       else {
-         printf("%e %e %e %e %e %f %f %e %e %" PRIu64 " %" PRIu64 "\n",
+         printf("%e %e %e %e %e %f %f %e %e %" PRIu64 " %" PRIu64 " ",
                 overall_solve_wtime,
                 ts.output.solve_wtime,
                 ts.output.setup_wtime,
@@ -369,6 +381,9 @@ int main (int argc, char *argv[])
                 comp_wtime_sum,
                 MsgQ_cycles_sum,
                 comp_cycles_sum);
+         printf("%d %d %d %f ",
+                num_lvls, lvl_n_min, lvl_n_max, lvl_n_mean);
+         printf("\n");
       }
    }
 

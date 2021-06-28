@@ -148,7 +148,7 @@ int main (int argc, char *argv[])
    Matrix A;
    if (problem_type == PROBLEM_FILE){
       char A_mat_file_str[128];
-      sprintf(A_mat_file_str, "%s_A.txt.bin", mat_file_str);
+      sprintf(A_mat_file_str, "%s", mat_file_str);
       freadBinaryMatrix(A_mat_file_str, &A, include_diag, csc_flag, coo_flag, MATRIX_NONSYMMETRIC);
       //char A_outfile[128];
       //sprintf(A_outfile, "./matlab/A.txt");
@@ -222,8 +222,8 @@ int main (int argc, char *argv[])
 
       /* print solver stats */
       if (verbose_output){
-         printf("Rel res. 2-norm %e\n"
-                "Solve wall-clock time %e\n"
+         printf("Rel res. 2-norm = %e\n"
+                "Solve wall-clock time = %e\n"
                 "MsgQ wtime = %e\n"
                 "Comp wtime = %e\n"
                 "MsgQ cycles = %" PRIu64 "\n"
@@ -236,7 +236,7 @@ int main (int argc, char *argv[])
                 comp_cycles_sum);
       }
       else {
-         printf("%e %e %e %e %e %e\n",
+         printf("%e %e %e %e %" PRIu64 " %" PRIu64 "\n",
                 res_norm,
                 solver.output.solve_wtime,
                 MsgQ_wtime_sum,

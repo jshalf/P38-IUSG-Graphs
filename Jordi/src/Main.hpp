@@ -47,6 +47,7 @@
 #include <queue>
 #include <inttypes.h>
 #include <numeric>
+#include <smmintrin.h>
 
 using namespace std;
 

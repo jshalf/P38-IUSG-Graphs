@@ -35,4 +35,6 @@ double SumDouble(double *x, int n);
 
 uint64_t rdtsc();
 
+void PrintDummy(double dummy);
+
 #endif
