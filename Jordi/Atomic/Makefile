@@ -6,7 +6,7 @@ CPPFILES = \
         $(SRCDIR)/MsgQ.cpp \
 	$(ATOMIC_SRCDIR)/Main.cpp \
 
-COMPILE = g++ -fopenmp -lm -O0 -std=c++11
+COMPILE = g++ -fopenmp -lm -O3 -std=c++11
 
 all: clean Main
 

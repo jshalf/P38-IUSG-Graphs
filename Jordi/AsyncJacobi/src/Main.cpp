@@ -15,7 +15,6 @@ int main (int argc, char *argv[])
    solver.input.mat_storage_type = MATRIX_STORAGE_CSR;
    solver.input.comp_wtime_flag = 0;
    solver.input.MsgQ_wtime_flag = 0;
-   solver.input.comp_cycles_flag = 0;
    solver.input.MsgQ_cycles_flag = 0;
    solver.input.comp_noop_flag = 0;
    solver.input.MsgQ_noop_flag = 0;
@@ -100,9 +99,6 @@ int main (int argc, char *argv[])
       else if (strcmp(argv[arg_index], "-MsgQ_cycles") == 0){
          solver.input.MsgQ_cycles_flag = 1;
       }
-      else if (strcmp(argv[arg_index], "-comp_cycles") == 0){
-         solver.input.comp_cycles_flag = 1;
-      }
       else if (strcmp(argv[arg_index], "-MsgQ_noop") == 0){
          solver.input.MsgQ_noop_flag = 1;
       }
@@ -162,18 +158,19 @@ int main (int argc, char *argv[])
    double *b = (double *)calloc(n, sizeof(double));
 
    solver.output.solve_wtime_vec = (double *)calloc(solver.input.num_threads, sizeof(double));
+   solver.output.num_qGets_vec = (int *)calloc(solver.input.num_threads, sizeof(int));
+   solver.output.num_qPuts_vec = (int *)calloc(solver.input.num_threads, sizeof(int));
 
    if (solver.input.MsgQ_wtime_flag == 1){
-      solver.output.MsgQ_wtime_vec = (double *)calloc(solver.input.num_threads, sizeof(double));
+      solver.output.MsgQ_put_wtime_vec = (double *)calloc(solver.input.num_threads, sizeof(double));
+      solver.output.MsgQ_get_wtime_vec = (double *)calloc(solver.input.num_threads, sizeof(double));
+   }
+   else if (solver.input.MsgQ_cycles_flag == 1){
+      solver.output.MsgQ_put_cycles_vec = (uint64_t *)calloc(solver.input.num_threads, sizeof(uint64_t));
+      solver.output.MsgQ_get_cycles_vec = (uint64_t *)calloc(solver.input.num_threads, sizeof(uint64_t));
    }
    else if (solver.input.comp_wtime_flag == 1){
       solver.output.comp_wtime_vec = (double *)calloc(solver.input.num_threads, sizeof(double));
-   }
-   else if (solver.input.MsgQ_cycles_flag == 1){
-      solver.output.MsgQ_cycles_vec = (uint64_t *)calloc(solver.input.num_threads, sizeof(uint64_t));
-   }
-   else if (solver.input.comp_cycles_flag == 1){
-      solver.output.comp_cycles_vec = (uint64_t *)calloc(solver.input.num_threads, sizeof(uint64_t));
    }
 
    for (int run = 1; run <= num_runs; run++){
@@ -188,7 +185,7 @@ int main (int argc, char *argv[])
       /* run Jacobi solver */
       Jacobi(&solver, A, b, &x);
 
-      double solve_wtime_sum = SumDouble(solver.output.solve_wtime_vec, solver.input.num_threads);
+      double solve_wtime_sum = accumulate(solver.output.solve_wtime_vec, solver.output.solve_wtime_vec+solver.input.num_threads, 0.0);
       solver.output.solve_wtime = solve_wtime_sum / (double)solver.input.num_threads;
 
       double res_norm;
@@ -199,69 +196,91 @@ int main (int argc, char *argv[])
          res_norm = Residual2Norm(A, x, b);
       }
 
-      double MsgQ_wtime_sum = 0.0, comp_wtime_sum = 0.0;
-      double MsgQ_wtime_mean = 0.0, comp_wtime_mean = 0.0;
-      uint64_t MsgQ_cycles_sum = 0, comp_cycles_sum = 0;
-      double MsgQ_cycles_mean = 0, comp_cycles_mean = 0;
-      if (solver.input.MsgQ_wtime_flag == 1){
-         MsgQ_wtime_sum = SumDouble(solver.output.MsgQ_wtime_vec, solver.input.num_threads);
-         MsgQ_wtime_mean = MsgQ_wtime_sum / (double)solver.input.num_threads;
-      }
-      else if (solver.input.comp_wtime_flag == 1){
-         comp_wtime_sum = SumDouble(solver.output.comp_wtime_vec, solver.input.num_threads);
-         comp_wtime_mean = comp_wtime_sum / (double)solver.input.num_threads;
-      }
-      else if (solver.input.MsgQ_cycles_flag == 1){
-         MsgQ_cycles_sum = accumulate(solver.output.MsgQ_cycles_vec, solver.output.MsgQ_cycles_vec+solver.input.num_threads, 0);
-         MsgQ_cycles_mean = MsgQ_cycles_sum / (double)solver.input.num_threads;
-      }
-      else if (solver.input.comp_cycles_flag == 1){
-         comp_cycles_sum = accumulate(solver.output.comp_cycles_vec, solver.output.comp_cycles_vec+solver.input.num_threads, 0);
-         comp_cycles_mean = comp_cycles_sum / (double)solver.input.num_threads;
+      double MsgQ_put_wtime_sum = 0.0, MsgQ_put_wtime_mean = 0.0;
+      double MsgQ_get_wtime_sum = 0.0, MsgQ_get_wtime_mean = 0.0;
+      uint64_t MsgQ_put_cycles_sum = 0;
+      uint64_t MsgQ_get_cycles_sum = 0;
+      double MsgQ_put_cycles_mean = 0.0;
+      double MsgQ_get_cycles_mean = 0.0;
+      double comp_wtime_sum = 0.0, comp_wtime_mean = 0.0;
+      int num_qGets_sum = 0, num_qPuts_sum = 0;
+      if (solver.input.MsgQ_flag == 1){
+         if (solver.input.MsgQ_wtime_flag == 1){
+            MsgQ_put_wtime_sum = accumulate(solver.output.MsgQ_put_wtime_vec, solver.output.MsgQ_put_wtime_vec+solver.input.num_threads, 0.0);
+            MsgQ_put_wtime_mean = MsgQ_put_wtime_sum / (double)solver.input.num_threads;
+
+            MsgQ_get_wtime_sum = accumulate(solver.output.MsgQ_get_wtime_vec, solver.output.MsgQ_get_wtime_vec+solver.input.num_threads, 0.0);
+            MsgQ_get_wtime_mean = MsgQ_get_wtime_sum / (double)solver.input.num_threads;
+         }
+         else if (solver.input.MsgQ_cycles_flag == 1){
+            MsgQ_put_cycles_sum = accumulate(solver.output.MsgQ_put_cycles_vec, solver.output.MsgQ_put_cycles_vec+solver.input.num_threads, 0);
+            MsgQ_put_cycles_mean = MsgQ_put_cycles_sum / (double)solver.input.num_threads;
+
+            MsgQ_get_cycles_sum = accumulate(solver.output.MsgQ_get_cycles_vec, solver.output.MsgQ_get_cycles_vec+solver.input.num_threads, 0);
+            MsgQ_get_cycles_mean = MsgQ_get_cycles_sum / (double)solver.input.num_threads;
+         }
+         else if (solver.input.comp_wtime_flag == 1){
+            comp_wtime_sum = accumulate(solver.output.comp_wtime_vec, solver.output.comp_wtime_vec+solver.input.num_threads, 0.0);
+            comp_wtime_mean = comp_wtime_sum / (double)solver.input.num_threads;
+         }
+
+         num_qGets_sum = accumulate(solver.output.num_qGets_vec, solver.output.num_qGets_vec+solver.input.num_threads, 0);
+         num_qPuts_sum = accumulate(solver.output.num_qPuts_vec, solver.output.num_qPuts_vec+solver.input.num_threads, 0);
       }
 
       /* print solver stats */
       if (verbose_output){
          printf("Rel res. 2-norm = %e\n"
                 "Solve wall-clock time = %e\n"
-                "MsgQ wtime = %e\n"
-                "Comp wtime = %e\n"
-                "MsgQ cycles = %" PRIu64 "\n"
-                "Comp cycles = %" PRIu64 "\n",
+                "Mean comp wtime = %e\n"
+                "MsgQ put wtime = %e\n"
+                "MsgQ get wtime = %e\n"
+                "MsgQ put cycles = %" PRIu64 "\n"
+                "MsgQ get cycles = %" PRIu64 "\n"
+                "Num qPuts = %d\n"
+                "Num qGets = %d\n",
                 res_norm,
                 solver.output.solve_wtime,
-                MsgQ_wtime_sum,
                 comp_wtime_sum,
-                MsgQ_cycles_sum,
-                comp_cycles_sum);
+                MsgQ_put_wtime_sum,
+                MsgQ_get_wtime_sum,
+                MsgQ_put_cycles_sum,
+                MsgQ_get_cycles_sum,
+                num_qPuts_sum,
+                num_qGets_sum);
       }
       else {
-         printf("%e %e %e %e %" PRIu64 " %" PRIu64 "\n",
+         printf("%e %e %e %e %e %" PRIu64 " %" PRIu64 " %d %d\n",
                 res_norm,
                 solver.output.solve_wtime,
-                MsgQ_wtime_sum,
                 comp_wtime_sum,
-                MsgQ_cycles_sum,
-                comp_cycles_sum);
+                MsgQ_put_wtime_sum,
+                MsgQ_get_wtime_sum,
+                MsgQ_put_cycles_sum,
+                MsgQ_get_cycles_sum,
+                num_qPuts_sum,
+                num_qGets_sum);
       }
    }
 
+   free(x);
+   free(b);
+
+   free(solver.output.solve_wtime_vec);
+   free(solver.output.num_qGets_vec);
+   free(solver.output.num_qPuts_vec);
+
    if (solver.input.MsgQ_wtime_flag == 1){
-      free(solver.output.MsgQ_wtime_vec);
+      free(solver.output.MsgQ_put_wtime_vec);
+      free(solver.output.MsgQ_get_wtime_vec);
+   }
+   else if (solver.input.MsgQ_cycles_flag == 1){
+      free(solver.output.MsgQ_put_cycles_vec);
+      free(solver.output.MsgQ_get_cycles_vec);
    }
    else if (solver.input.comp_wtime_flag == 1){
       free(solver.output.comp_wtime_vec);
    }
-   else if (solver.input.MsgQ_cycles_flag == 1){
-      free(solver.output.MsgQ_cycles_vec);
-   }
-   else if (solver.input.comp_cycles_flag == 1){
-      free(solver.output.comp_cycles_vec);
-   }
-
-   free(solver.output.solve_wtime_vec);
-   free(x);
-   free(b);
 
    return 0;
 }

@@ -54,9 +54,9 @@ int qPoll(Queue *Q,
 {
    int flag = 0;
    double x;
-   //omp_set_lock(&(Q->lock[i])); /* acquire lock */
 
    if (omp_test_lock(&(Q->lock[destinationQID]))){
+     
       if (!(Q->q[destinationQID].empty())){ /* if the queue is empty, return zero flag */
          /* if queue is not empty, get front and flag of one */
          *destinationData = Q->q[destinationQID].front();

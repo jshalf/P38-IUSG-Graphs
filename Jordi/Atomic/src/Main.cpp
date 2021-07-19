@@ -36,61 +36,95 @@ int main (int argc, char *argv[])
    
    omp_set_num_threads(num_threads);
 
-   uint64_t *cycles = (uint64_t *)malloc(num_threads * sizeof(uint64_t));
-   double *wtime = (double *)malloc(num_threads * sizeof(double));
-   double a = 1.1;
+   uint64_t *cycles_sum = (uint64_t *)malloc(num_threads * sizeof(uint64_t));
+   double *wtime_sum = (double *)malloc(num_threads * sizeof(double));
+
+   srand(time(NULL));
+   double a = RandDouble(-1.0, 1.0);
  
    for (int run = 1; run <= num_runs; run++){
       #pragma omp parallel
       {
          int tid = omp_get_thread_num();
-         double b = (double)tid;
 
-         wtime[tid] = 0;
-         cycles[tid] = 0;
-
-         uint64_t cycles_sum = 0;
+         uint64_t cycles_sum_loc = 0;
          #pragma omp barrier
 
-         double wtime_start = omp_get_wtime();
-         uint64_t cycles_start = rdtsc();
          if (atomic_flag == 1){
             for (int iters = 0; iters < num_iters; iters++){   
+               double b = RandDouble(-1.0, 1.0);
+               uint64_t cycles_start = rdtsc();
                #pragma omp atomic
                a += b;
+               uint64_t cycles_stop = rdtsc();
+               cycles_sum_loc += cycles_stop - cycles_start;
             }
          }
          else {
             for (int iters = 0; iters < num_iters; iters++){
+               double b = RandDouble(-1.0, 1.0);
+               uint64_t cycles_start = rdtsc();
                a += b;
+               uint64_t cycles_stop = rdtsc();
+               cycles_sum_loc += cycles_stop - cycles_start;
             }
          }
-         cycles[tid] = rdtsc() - cycles_start;
-         wtime[tid] = omp_get_wtime() - wtime_start;
+
+         double wtime_sum_loc = 0;
+         #pragma omp barrier
+
+         if (atomic_flag == 1){
+            for (int iters = 0; iters < num_iters; iters++){
+               double b = RandDouble(-1.0, 1.0);
+               double wtime_start = omp_get_wtime();
+               #pragma omp atomic
+               a += b;
+               double wtime_stop = omp_get_wtime();
+               wtime_sum_loc += wtime_stop - wtime_start;
+            }
+         }
+         else {
+            for (int iters = 0; iters < num_iters; iters++){
+               double b = RandDouble(-1.0, 1.0);
+               double wtime_start = omp_get_wtime();
+               a += b;
+               double wtime_stop = omp_get_wtime();
+               wtime_sum_loc += wtime_stop - wtime_start;
+            }
+         }
+         
+         cycles_sum[tid] = cycles_sum_loc;
+         wtime_sum[tid] = wtime_sum_loc;
       }
 
-      uint64_t mean_cycles = 0;
+      uint64_t cycles_mean = 0;
       for (int t = 0; t < num_threads; t++){
-         mean_cycles += cycles[t];
+         cycles_mean += cycles_sum[t];
       }
-      mean_cycles /= (uint64_t)num_threads;
+      cycles_mean /= (uint64_t)num_threads;
 
-      double mean_wtime = 0;
+      double wtime_mean = 0;
       for (int t = 0; t < num_threads; t++){
-         mean_wtime += wtime[t];
+         wtime_mean += wtime_sum[t];
       }
-      mean_wtime /= (double)num_threads;
+      wtime_mean /= (double)num_threads;
 
       if (verbose_output){
-         printf("Wall-clock time %e, num cycles %" PRIu64 "\n", mean_wtime, mean_cycles);
+         printf("Wall-clock time  = %e, "
+                "num cycles = %" PRIu64 ", "
+                "acummulated value = %e\n", 
+                wtime_mean,
+                cycles_mean,
+                a);
       }
       else {
-         printf("%e, %" PRIu64 "\n", mean_wtime, mean_cycles);
+         printf("%e %" PRIu64 " %e\n",
+                wtime_mean, cycles_mean, a);
       }
    }
 
-   free(cycles);
-   free(wtime);
+   free(cycles_sum);
+   free(wtime_sum);
 
    return 0;
 }
