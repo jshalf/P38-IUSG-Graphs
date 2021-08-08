@@ -43,6 +43,21 @@ void MatVecT_CSR_Seq(MatVecData *mv,
    }
 }
 
+void MatVecT_MsgQ_CSR_Thread(
+   Queue *Q,
+   Matrix A_loc,
+   double *x_loc,
+   double *y_loc,
+   double *z_loc,
+   int *my_rows,
+   int n_loc,
+   int nnz_loc,
+   int num_gets,
+   int *num_spins,
+   int *num_qPuts,
+   int *num_qGets
+);
+
 /**************************************************************************
  * Parallel y=A^Tx where y is unknown.
  * A is in compressed sparse row (Matrix) format.
@@ -80,7 +95,8 @@ void MatVecT_CSR(MatVecData *mv,
    {
       int tid = omp_get_thread_num();
       int num_threads = mv->input.num_threads;
-      double comp_wtime_start, comp_wtime = 0.0;
+      double solve_wtime, wtime_start, wtime_stop;
+      double comp_wtime_start, comp_wtime_stop, comp_wtime = 0.0;
       double MsgQ_wtime_start, MsgQ_wtime_stop, MsgQ_wtime = 0.0;
       double MsgQ_put_wtime_start, MsgQ_put_wtime_stop, MsgQ_put_wtime = 0.0;
       double MsgQ_get_wtime_start, MsgQ_get_wtime_stop, MsgQ_get_wtime = 0.0;
@@ -91,10 +107,12 @@ void MatVecT_CSR(MatVecData *mv,
       int num_qGets = 0, num_qPuts = 0;
       int dummy_num_qGets = 0, dummy_num_qPuts = 0;
       int dummy_num_spins = 0;
+      int temp_num_qPuts = 0, temp_num_qGets = 0;
+      int temp_num_gets = num_gets, temp_num_spins = 0;
       double dummy = 0.0;
       int nnz_loc, n_loc;
       int i_loc, jj_loc;
-      double *y_loc, *z_loc;
+      double *x_loc, *y_loc, *z_loc;
       int *my_rows;
       Matrix A_loc;
 
@@ -107,22 +125,23 @@ void MatVecT_CSR(MatVecData *mv,
          }
       }
       my_rows = (int *)calloc(n_loc, sizeof(int));
-      i_loc = 0;
-      #pragma omp for schedule(static, lump) nowait
-      for (int i = 0; i < num_rows; i++){
-         my_rows[i_loc] = i;
-         i_loc++;
-      }
+      x_loc = (double *)calloc(n_loc, sizeof(double));
       A_loc.j = (int *)calloc(nnz_loc, sizeof(int));
       A_loc.data = (double *)calloc(nnz_loc, sizeof(double));
+      A_loc.start = (int *)calloc(n_loc+1, sizeof(int));
       jj_loc = 0, i_loc = 0;
       #pragma omp for schedule(static, lump) nowait
       for (int i = 0; i < num_rows; i++){
+         my_rows[i_loc] = i;
+         x_loc[i_loc] = x[i];
+         int i_nnz = 0;
          for (int jj = A.start[i]; jj < A.start[i+1]; jj++){
             A_loc.j[jj_loc] = A.j[jj];
             A_loc.data[jj_loc] = A.data[jj];
             jj_loc++;
+            i_nnz++;
          }
+         A_loc.start[i_loc+1] = A_loc.start[i_loc] + i_nnz;
          i_loc++;
       }
 
@@ -156,20 +175,26 @@ void MatVecT_CSR(MatVecData *mv,
          }
          num_gets = t_sum[tid];
       }
-  
-      double wtime_start = omp_get_wtime();
+      else if (mv->input.expand_flag == 1){
+         #pragma omp for schedule(static, lump)
+         for (int i = 0; i < num_cols; i++){
+            for (int j = 0; j < num_threads; j++){
+               int jj = j*num_cols + i;
+               mv->y_expand[jj] = 0;
+            }
+         }
+      }
+
+      #pragma omp barrier
  
       if (mv->input.MsgQ_flag == 1){
          /*****************
           *   MsgQ wtime
           *****************/
          if (mv->input.MsgQ_wtime_flag == 1){
-            jj_loc = 0;
             for (int i_loc = 0; i_loc < n_loc; i_loc++){
-               int i = my_rows[i_loc];
-               for (int jj = A.start[i]; jj < A.start[i+1]; jj++){
-                  z_loc[jj_loc] = A_loc.data[jj_loc] * x[i];
-                  jj_loc++;
+               for (jj_loc = A_loc.start[i_loc]; jj_loc < A_loc.start[i_loc+1]; jj_loc++){
+                  z_loc[jj_loc] = A_loc.data[jj_loc] * x_loc[i_loc];
                }
             }
             MsgQ_wtime_start = omp_get_wtime();
@@ -179,33 +204,33 @@ void MatVecT_CSR(MatVecData *mv,
                qPut(&Q, j, z);
                num_qPuts++;
             }
-            MsgQ_put_wtime += omp_get_wtime() - MsgQ_wtime_start;
+            MsgQ_wtime_stop = omp_get_wtime();
+            MsgQ_put_wtime += MsgQ_wtime_stop - MsgQ_wtime_start;
             num_spins = 0;
+            temp_num_gets = num_gets;
             MsgQ_wtime_start = omp_get_wtime();
-            while (num_gets > 0){
+            while (temp_num_gets > 0){
                for (int i_loc = 0; i_loc < n_loc; i_loc++){
                   int i = my_rows[i_loc];
                   double z, z_accum = 0.0;
                   int get_flag;
                   get_flag = qGet(&Q, i, &z);
-                  num_qGets++;
                   if (get_flag == 1){
+                     num_qGets++;
                      z_accum += z;
-                     num_gets--;
+                     temp_num_gets--;
                   }
                   y_loc[i_loc] += z_accum;
                }
                num_spins++;
             }
-            MsgQ_get_wtime += omp_get_wtime() - MsgQ_wtime_start;
+            MsgQ_wtime_stop = omp_get_wtime();
+            MsgQ_get_wtime += MsgQ_wtime_stop - MsgQ_wtime_start;
 
             /* re-do some computation to re-create cache behaviour */
-            jj_loc = 0;
             for (int i_loc = 0; i_loc < n_loc; i_loc++){
-               int i = my_rows[i_loc];
-               for (int jj = A.start[i]; jj < A.start[i+1]; jj++){
-                  z_loc[jj_loc] = A_loc.data[jj_loc] * x[i];
-                  jj_loc++;
+               for (jj_loc = A_loc.start[i_loc]; jj_loc < A_loc.start[i_loc+1]; jj_loc++){
+                  z_loc[jj_loc] = A_loc.data[jj_loc] * x_loc[i_loc];
                }
             }
 
@@ -217,32 +242,32 @@ void MatVecT_CSR(MatVecData *mv,
                dummy += (z + j);
                dummy_num_qPuts++;
             }
-            MsgQ_put_wtime -= omp_get_wtime() - MsgQ_wtime_start;
+            MsgQ_wtime_stop = omp_get_wtime();
+            MsgQ_put_wtime -= MsgQ_wtime_stop - MsgQ_wtime_start;
             dummy_num_spins = 0;
             MsgQ_wtime_start = omp_get_wtime();
             for (int s = 0; s < num_spins; s++){
                for (int i_loc = 0; i_loc < n_loc; i_loc++){
                   int i = my_rows[i_loc];
-                  double z, z_accum;
+                  double z = 1.1, z_accum = 1.1;
                   int get_flag;
                   dummy_num_qGets++;
+                  z_accum += z;
                   y_loc[i_loc] += z_accum;
                }
                dummy_num_spins++;
             }
             /* subtract elapsed MsgQ-less wtime */
-            MsgQ_get_wtime -= omp_get_wtime() - MsgQ_wtime_start;
+            MsgQ_wtime_stop = omp_get_wtime();
+            MsgQ_get_wtime -= MsgQ_wtime_stop - MsgQ_wtime_start;
          }
          /*****************
           *   MsgQ cycles
           *****************/
          else if (mv->input.MsgQ_cycles_flag == 1){
-            jj_loc = 0;
             for (int i_loc = 0; i_loc < n_loc; i_loc++){
-               int i = my_rows[i_loc];
-               for (int jj = A.start[i]; jj < A.start[i+1]; jj++){
-                  z_loc[jj_loc] = A_loc.data[jj_loc] * x[i];
-                  jj_loc++;
+               for (jj_loc = A_loc.start[i_loc]; jj_loc < A_loc.start[i_loc+1]; jj_loc++){
+                  z_loc[jj_loc] = A_loc.data[jj_loc] * x_loc[i_loc];
                }
             }
             MsgQ_cycles_start = rdtsc();
@@ -252,33 +277,33 @@ void MatVecT_CSR(MatVecData *mv,
                qPut(&Q, j, z);
                num_qPuts++;
             }
-            MsgQ_put_cycles += rdtsc() - MsgQ_cycles_start;
+            MsgQ_cycles_stop = rdtsc();
+            MsgQ_put_cycles += MsgQ_cycles_stop - MsgQ_cycles_start;
             num_spins = 0;
+            temp_num_gets = num_gets;
             MsgQ_cycles_start = rdtsc();
-            while (num_gets > 0){
+            while (temp_num_gets > 0){
                for (int i_loc = 0; i_loc < n_loc; i_loc++){
                   int i = my_rows[i_loc];
                   double z, z_accum = 0.0;
                   int get_flag;
                   get_flag = qGet(&Q, i, &z);
-                  num_qGets++;
                   if (get_flag == 1){
+                     num_qGets++;
                      z_accum += z;
-                     num_gets--;
+                     temp_num_gets--;
                   }
                   y_loc[i_loc] += z_accum;
                }
                num_spins++;
             }
-            MsgQ_get_cycles += rdtsc() - MsgQ_cycles_start;
+            MsgQ_cycles_stop = rdtsc();
+            MsgQ_get_cycles += MsgQ_cycles_stop - MsgQ_cycles_start;
 
             /* re-do some computation to re-create cache behaviour */
-            jj_loc = 0;
             for (int i_loc = 0; i_loc < n_loc; i_loc++){
-               int i = my_rows[i_loc];
-               for (int jj = A.start[i]; jj < A.start[i+1]; jj++){
-                  z_loc[jj_loc] = A_loc.data[jj_loc] * x[i];
-                  jj_loc++;
+               for (jj_loc = A_loc.start[i_loc]; jj_loc < A_loc.start[i_loc+1]; jj_loc++){
+                  z_loc[jj_loc] = A_loc.data[jj_loc] * x_loc[i_loc];
                }
             }
 
@@ -290,36 +315,34 @@ void MatVecT_CSR(MatVecData *mv,
                dummy += (z + j);
                dummy_num_qPuts++;
             }
-            MsgQ_put_cycles -= rdtsc() - MsgQ_cycles_start;
+            MsgQ_cycles_stop = rdtsc();
+            MsgQ_put_cycles -= MsgQ_cycles_stop - MsgQ_cycles_start;
             dummy_num_spins = 0;
             MsgQ_cycles_start = rdtsc();
             for (int s = 0; s < num_spins; s++){
                for (int i_loc = 0; i_loc < n_loc; i_loc++){
                   int i = my_rows[i_loc];
-                  double z, z_accum;
+                  double z = 1.1, z_accum = 1.1;
                   int get_flag;
                   dummy_num_qGets++;
+                  z_accum += z;
                   y_loc[i_loc] += z_accum;
                }
                dummy_num_spins++;
             }
             /* subtract elapsed MsgQ-less cycles */
-            MsgQ_get_cycles -= rdtsc() - MsgQ_cycles_start;
+            MsgQ_cycles_stop = rdtsc();
+            MsgQ_get_cycles -= MsgQ_cycles_stop - MsgQ_cycles_start;
          }
          /*****************
           *  Comp wtime
           *****************/
          else if (mv->input.comp_wtime_flag == 1){
-            comp_wtime_start = omp_get_wtime();
-            jj_loc = 0;
             for (int i_loc = 0; i_loc < n_loc; i_loc++){
-               int i = my_rows[i_loc];
-               for (int jj = A.start[i]; jj < A.start[i+1]; jj++){
-                  z_loc[jj_loc] = A_loc.data[jj_loc] * x[i];
-                  jj_loc++;
+               for (jj_loc = A_loc.start[i_loc]; jj_loc < A_loc.start[i_loc+1]; jj_loc++){
+                  z_loc[jj_loc] = A_loc.data[jj_loc] * x_loc[i_loc];
                }
             }
-            comp_wtime += omp_get_wtime() - comp_wtime_start;
             for (jj_loc = 0; jj_loc < nnz_loc; jj_loc++){
                int j = A_loc.j[jj_loc];
                double z = z_loc[jj_loc];
@@ -327,34 +350,29 @@ void MatVecT_CSR(MatVecData *mv,
                num_qPuts++;
             }
             num_spins = 0;
-            while (num_gets > 0){
+            temp_num_gets = num_gets;
+            while (temp_num_gets > 0){
                for (int i_loc = 0; i_loc < n_loc; i_loc++){
                   int i = my_rows[i_loc];
                   double z, z_accum = 0.0;
                   int get_flag;
                   get_flag = qGet(&Q, i, &z);
-                  num_qGets++;
                   if (get_flag == 1){
+                     num_qGets++;
                      z_accum += z;
-                     num_gets--;
+                     temp_num_gets--;
                   }
                   y_loc[i_loc] += z_accum;
                }
                num_spins++;
             }
 
-            /* re-do some computation to re-create cache behaviour */
-            jj_loc = 0;
+            comp_wtime_start = omp_get_wtime();
             for (int i_loc = 0; i_loc < n_loc; i_loc++){
-               int i = my_rows[i_loc];
-               for (int jj = A.start[i]; jj < A.start[i+1]; jj++){
-                  z_loc[jj_loc] = A_loc.data[jj_loc] * x[i];
-                  jj_loc++;
+               for (jj_loc = A_loc.start[i_loc]; jj_loc < A_loc.start[i_loc+1]; jj_loc++){
+                  z_loc[jj_loc] = A_loc.data[jj_loc] * x_loc[i_loc];
                }
             }
-
-            /* now compute wtime when MsgQs are removed */
-            comp_wtime_start = omp_get_wtime();
             for (jj_loc = 0; jj_loc < nnz_loc; jj_loc++){
                int j = A_loc.j[jj_loc];
                double z = z_loc[jj_loc];
@@ -365,14 +383,15 @@ void MatVecT_CSR(MatVecData *mv,
             for (int s = 0; s < num_spins; s++){
                for (int i_loc = 0; i_loc < n_loc; i_loc++){
                   int i = my_rows[i_loc];
-                  double z, z_accum = 1.1;
+                  double z = 1.1, z_accum = 1.1;
                   dummy_num_qGets++;
+                  z_accum += z;
                   y_loc[i_loc] += z_accum;
                }
                dummy_num_spins++;
             }
-            /* add elapsed MsgQ-less wtime to the comp time */
-            comp_wtime += omp_get_wtime() - comp_wtime_start;
+            comp_wtime_stop = omp_get_wtime();
+            comp_wtime += comp_wtime_stop - comp_wtime_start;
          }
          /******************************
           *   MsgQ no-op and comp no-op
@@ -393,46 +412,38 @@ void MatVecT_CSR(MatVecData *mv,
           * standard scheme (no timers, no no-ops, etc...)
           *************************************************/
          else {
-            jj_loc = 0;
-            for (int i_loc = 0; i_loc < n_loc; i_loc++){
-               int i = my_rows[i_loc];
-               for (int jj = A.start[i]; jj < A.start[i+1]; jj++){
-                  z_loc[jj_loc] = A_loc.data[jj_loc] * x[i];
-                  jj_loc++;
-               }
-            }
-            for (jj_loc = 0; jj_loc < nnz_loc; jj_loc++){
-               int j = A_loc.j[jj_loc];
-               double z = z_loc[jj_loc];
-               qPut(&Q, j, z);
-               num_qPuts++;
-            }
-            num_spins = 0;
-            while (num_gets > 0){
-               for (int i_loc = 0; i_loc < n_loc; i_loc++){
-                  int i = my_rows[i_loc];
-                  double z, z_accum = 0.0;
-                  int get_flag;
-                  get_flag = qGet(&Q, i, &z);
-                  num_qGets++;
-                  if (get_flag == 1){
-                     z_accum += z;
-                     num_gets--;
-                  }
-                  y_loc[i_loc] += z_accum;
-               }
-               num_spins++;
-            }
+            //MatVecT_MsgQ_CSR_Thread(
+            //   &Q, A_loc, x_loc, y_loc, z_loc, my_rows, n_loc, nnz_loc,
+            //   temp_num_gets, &temp_num_spins, &temp_num_qPuts, &temp_num_qGets);
+            //#pragma omp barrier
+
+            wtime_start = omp_get_wtime();
+            MatVecT_MsgQ_CSR_Thread(
+               &Q, A_loc, x_loc, y_loc, z_loc, my_rows, n_loc, nnz_loc,
+               num_gets, &num_spins, &num_qPuts, &num_qGets);
+            wtime_stop = omp_get_wtime();
+            solve_wtime = wtime_stop - wtime_start;
          }
       }
       else if (mv->input.expand_flag == 1){
+         wtime_start = omp_get_wtime();
          int j_offset = num_cols * tid;
-         #pragma omp for schedule(static, lump)
-         for (int i = 0; i < num_rows; i++){
-            for (int jj = A.start[i]; jj < A.start[i+1]; jj++){
-               mv->y_expand[j_offset + A.j[jj]] += A.data[jj] * x[i];
+
+         //#pragma omp for schedule(static, lump)
+         //for (int i = 0; i < num_rows; i++){
+         //   for (int jj = A.start[i]; jj < A.start[i+1]; jj++){
+         //      mv->y_expand[j_offset + A.j[jj]] += A.data[jj] * x[i];
+         //   }
+         //}
+
+         jj_loc = 0;
+         for (int i_loc = 0; i_loc < n_loc; i_loc++){
+            for (int jj = A_loc.start[i_loc]; jj < A_loc.start[i_loc+1]; jj++){
+               mv->y_expand[j_offset + A_loc.j[jj_loc]] += A_loc.data[jj_loc] * x_loc[i_loc];
+               jj_loc++;
             }
          }
+         #pragma omp barrier
    
          #pragma omp for schedule(static, lump) nowait
          for (int i = 0; i < num_cols; i++){
@@ -440,29 +451,56 @@ void MatVecT_CSR(MatVecData *mv,
             for (int j = 0; j < num_threads; j++){
                int jj = j*num_cols + i;
                y[i] += mv->y_expand[jj];
-               mv->y_expand[jj] = 0;
             }
          }
+         wtime_stop = omp_get_wtime();
+         solve_wtime = wtime_stop - wtime_start;
       }
       else if (mv->input.atomic_flag == 1){
-         #pragma omp for schedule(static, lump) nowait
-         for (int i = 0; i < num_rows; i++){
-            for (int jj = A.start[i]; jj < A.start[i+1]; jj++){
+         wtime_start = omp_get_wtime();
+
+         //#pragma omp for schedule(static, lump) nowait
+         //for (int i = 0; i < num_rows; i++){
+         //   for (int jj = A.start[i]; jj < A.start[i+1]; jj++){
+         //      #pragma omp atomic
+         //      y[A.j[jj]] += A.data[jj] * x[i];
+         //   }
+         //}
+
+         jj_loc = 0;
+         for (int i_loc = 0; i_loc < n_loc; i_loc++){
+            for (int jj = A_loc.start[i_loc]; jj < A_loc.start[i_loc+1]; jj++){
                #pragma omp atomic
-               y[A.j[jj]] += A.data[jj] * x[i];
+               y[A_loc.j[jj_loc]] += A_loc.data[jj_loc] * x_loc[i_loc];
+               jj_loc++;
             }
          }
+         wtime_stop = omp_get_wtime();
+         solve_wtime = wtime_stop - wtime_start;
       }
       else {
-         #pragma omp for schedule(static, lump) nowait
-         for (int i = 0; i < num_rows; i++){
-            for (int jj = A.start[i]; jj < A.start[i+1]; jj++){
-               y[A.j[jj]] += A.data[jj] * x[i];
+         wtime_start = omp_get_wtime();
+
+        // #pragma omp for schedule(static, lump) nowait
+        // for (int i = 0; i < num_rows; i++){
+        //    for (int jj = A.start[i]; jj < A.start[i+1]; jj++){
+        //       y[A.j[jj]] += A.data[jj] * x[i];
+        //    }
+        // }
+
+         jj_loc = 0;
+         for (int i_loc = 0; i_loc < n_loc; i_loc++){
+            for (int jj = A_loc.start[i_loc]; jj < A_loc.start[i_loc+1]; jj++){
+               y[A_loc.j[jj_loc]] += A_loc.data[jj_loc] * x_loc[i_loc];
+               jj_loc++;
             }
          }
+
+         wtime_stop = omp_get_wtime();
+         solve_wtime = wtime_stop - wtime_start;
       }
 
-      mv->output.solve_wtime_vec[tid] = omp_get_wtime() - wtime_start;
+      mv->output.solve_wtime_vec[tid] = solve_wtime;
 
       if (mv->input.MsgQ_flag == 1){
          for (int i_loc = 0; i_loc < n_loc; i_loc++){
@@ -471,29 +509,33 @@ void MatVecT_CSR(MatVecData *mv,
          }
          free(y_loc);
          free(z_loc);
-         free(A_loc.j);
-         free(A_loc.data);
 
-         if (mv->input.MsgQ_wtime_flag == 1){
+         //if (mv->input.MsgQ_wtime_flag == 1){
             mv->output.MsgQ_put_wtime_vec[tid] = MsgQ_put_wtime;
             mv->output.MsgQ_get_wtime_vec[tid] = MsgQ_get_wtime;
-         }
-         else if (mv->input.MsgQ_cycles_flag == 1){
+         //}
+         //else if (mv->input.MsgQ_cycles_flag == 1){
             mv->output.MsgQ_put_cycles_vec[tid] = MsgQ_put_cycles;
             mv->output.MsgQ_get_cycles_vec[tid] = MsgQ_get_cycles;
-         }
-         else if (mv->input.comp_wtime_flag == 1){
+         //}
+         //else if (mv->input.comp_wtime_flag == 1){
             mv->output.comp_wtime_vec[tid] = comp_wtime;
-         }
+         //}
 
          mv->output.num_qGets_vec[tid] = num_qGets;
          mv->output.num_qPuts_vec[tid] = num_qPuts;
 
          dummy += (dummy_num_spins + dummy_num_qPuts + dummy_num_qGets);
          PrintDummy(dummy);
+
+         #pragma omp barrier
       }
 
       free(my_rows);
+      free(x_loc);
+      free(A_loc.j);
+      free(A_loc.data);
+      free(A_loc.start);
    }
 
    if (mv->input.MsgQ_flag == 1){
@@ -504,5 +546,48 @@ void MatVecT_CSR(MatVecData *mv,
       free(t_sum_loc);
       qDestroyLock(&Q);
       qFree(&Q);
+   }
+}
+
+void MatVecT_MsgQ_CSR_Thread(
+   Queue *Q,
+   Matrix A_loc,
+   double *x_loc,
+   double *y_loc,
+   double *z_loc,
+   int *my_rows,
+   int n_loc,
+   int nnz_loc,
+   int num_gets,
+   int *num_spins,
+   int *num_qPuts,
+   int *num_qGets)
+{
+   for (int i_loc = 0; i_loc < n_loc; i_loc++){
+      for (int jj_loc = A_loc.start[i_loc]; jj_loc < A_loc.start[i_loc+1]; jj_loc++){
+         z_loc[jj_loc] = A_loc.data[jj_loc] * x_loc[i_loc];
+      }
+   }
+   for (int jj_loc = 0; jj_loc < nnz_loc; jj_loc++){
+      int j = A_loc.j[jj_loc];
+      double z = z_loc[jj_loc];
+      qPut(Q, j, z);
+      num_qPuts[0]++;
+   }
+   num_spins[0] = 0;
+   while (num_gets > 0){
+      for (int i_loc = 0; i_loc < n_loc; i_loc++){
+         int i = my_rows[i_loc];
+         double z, z_accum = 0.0;
+         int get_flag;
+         get_flag = qGet(Q, i, &z);
+         if (get_flag == 1){
+            num_qGets[0]++;
+            z_accum += z;
+            num_gets--;
+         }
+         y_loc[i_loc] += z_accum;
+      }
+      num_spins[0]++;
    }
 }

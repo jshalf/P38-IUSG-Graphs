@@ -89,9 +89,9 @@ int qGet(Queue *Q,
 {
    double x;
    int flag = 0;
-   //omp_set_lock(&(Q->lock[i])); /* acquire lock */
+   omp_set_lock(&(Q->lock[destinationQID])); /* acquire lock */
 
-   if (omp_test_lock(&(Q->lock[destinationQID]))){
+   //if (omp_test_lock(&(Q->lock[destinationQID]))){
       if (!(Q->q[destinationQID].empty())){ /* if the queue is empty, return zero flag */
          /* if queue is not empty, pop front and flag of one */
          *destinationData = Q->q[destinationQID].front();
@@ -100,7 +100,7 @@ int qGet(Queue *Q,
       }
 
       omp_unset_lock(&(Q->lock[destinationQID])); /* release lock */
-   }
+   //}
 
    return flag;
 }

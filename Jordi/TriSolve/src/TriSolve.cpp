@@ -52,7 +52,7 @@ void TriSolve_LevelSchedule(TriSolveData *ts,
 
    #pragma omp parallel
    {
-      double solve_start;
+      double solve_start, solve_stop;
       int tid = omp_get_thread_num();
       int *n_loc, **my_rows, i_loc;
 
@@ -110,11 +110,13 @@ void TriSolve_LevelSchedule(TriSolveData *ts,
                }
                x[i] /= T.diag[i];
             }
+            num_iters++;
             #pragma omp barrier
             num_iters++;
          }
       }
-      ts->output.solve_wtime_vec[tid] = omp_get_wtime() - solve_start;
+      solve_stop = omp_get_wtime();
+      ts->output.solve_wtime_vec[tid] = solve_stop - solve_start;
 
       ts->output.num_relax[tid] = num_relax;
       ts->output.num_iters[tid] = num_iters;
@@ -241,9 +243,14 @@ void TriSolve_Async(TriSolveData *ts,
       Matrix T_loc;
       int i_loc, j_loc, jj_loc, n_loc, nnz_loc, i_prev, i_loc_prev;
       int kk, k;
-      double solve_start, setup_start;
-      double comp_wtime_start, comp_wtime = 0.0, MsgQ_wtime_start, MsgQ_wtime = 0.0; 
-      uint64_t MsgQ_cycles_start, MsgQ_cycles = 0, comp_cycles_start, comp_cycles = 0;
+      double solve_wtime, setup_wtime, wtime_start, wtime_stop;
+      double comp_wtime_start, comp_wtime_stop, comp_wtime = 0.0;
+      double MsgQ_wtime_start, MsgQ_wtime_stop, MsgQ_wtime = 0.0;
+      double MsgQ_put_wtime_start, MsgQ_put_wtime_stop, MsgQ_put_wtime = 0.0;
+      double MsgQ_get_wtime_start, MsgQ_get_wtime_stop, MsgQ_get_wtime = 0.0;
+      uint64_t MsgQ_cycles_start, MsgQ_cycles_stop, MsgQ_cycles = 0;
+      uint64_t MsgQ_put_cycles_start, MsgQ_put_cycles_stop, MsgQ_put_cycles = 0;
+      uint64_t MsgQ_get_cycles_start, MsgQ_get_cycles_stop, MsgQ_get_cycles = 0;
       int tid = omp_get_thread_num();
       int *nz_done_flags_loc, *row_done_flags_loc;
       int *row_counts_loc;
@@ -254,7 +261,7 @@ void TriSolve_Async(TriSolveData *ts,
       double dummy;
       vector<vector<int>> put_targets;
 
-      setup_start = omp_get_wtime();
+      wtime_start = omp_get_wtime();
 
       n_loc = 0;
       nnz_loc = 0;
@@ -412,9 +419,10 @@ void TriSolve_Async(TriSolveData *ts,
          }
          nz_done_flags_loc = (int *)calloc(nnz_loc, sizeof(int));
       }
+      wtime_stop = omp_get_wtime();
     
-      ts->output.setup_wtime_vec[tid] = omp_get_wtime() - setup_start;
-      solve_start = omp_get_wtime();
+      ts->output.setup_wtime_vec[tid] = wtime_stop - wtime_start;
+      wtime_start = omp_get_wtime();
 
       /* initialize solution */
       if (ts->input.MsgQ_flag == 1){
@@ -520,232 +528,26 @@ void TriSolve_Async(TriSolveData *ts,
              *   MsgQ wtime
              *****************/
             if (ts->input.MsgQ_wtime_flag == 1){
-               for (int i_loc = 0; i_loc < n_loc; i_loc++){ /* loop over rows */
-                  int i = my_rows[i_loc];
-                  int jj_start = T.start[i];
-                  int jj_end = T.start[i+1];
-                  int jj_diff = jj_end - jj_start;
-                  int row_count_i = jj_diff;
-                  while (row_count_i > 0){ /* loop until x[i] has been completed */
-                     int jj_loc_temp = jj_loc;
-                     for (int jj = jj_start; jj < jj_end; jj++){
-                        if (nz_done_flags_loc[jj_loc_temp] == 0){ /* has this non-zero been used? */
-                           double xj;
-                           MsgQ_wtime_start = omp_get_wtime();
-                           int get_flag = qGet(&Q, jj, &xj);
-                           MsgQ_wtime += omp_get_wtime() - MsgQ_wtime_start;
-                           /* if x[j] is available, update x[i] and other data */
-                           if (get_flag == 1){
-                              x_loc[i_loc] -= T.data[jj] * xj;
-                              row_count_i--;
-                              nz_done_flags_loc[jj_loc_temp] = 1;
-                           }
-                        }
-                        jj_loc_temp++;
-                     }
-                  }
-                  x_loc[i_loc] /= T.diag[i];
-                  double xi = x_loc[i_loc];
-                  for (int j = 0; j < put_targets[i_loc].size(); j++){
-                     MsgQ_wtime_start = omp_get_wtime();
-                     qPut(&Q, put_targets[i_loc][j], xi);
-                     MsgQ_wtime += omp_get_wtime() - MsgQ_wtime_start;
-                  }
-
-                  jj_loc += jj_diff;
-               }
             }
             /*****************
              *   MsgQ cycles
              *****************/
             else if (ts->input.MsgQ_cycles_flag == 1){
-               for (int i_loc = 0; i_loc < n_loc; i_loc++){ /* loop over rows */
-                  int i = my_rows[i_loc];
-                  int jj_start = T.start[i];
-                  int jj_end = T.start[i+1];
-                  int jj_diff = jj_end - jj_start;
-                  int row_count_i = jj_diff;
-                  while (row_count_i > 0){ /* loop until x[i] has been completed */
-                     int jj_loc_temp = jj_loc;
-                     for (int jj = jj_start; jj < jj_end; jj++){
-                        if (nz_done_flags_loc[jj_loc_temp] == 0){ /* has this non-zero been used? */
-                           double xj;
-                           MsgQ_cycles_start = rdtsc();
-                           int get_flag = qGet(&Q, jj, &xj);
-                           MsgQ_cycles += rdtsc() - MsgQ_cycles_start;
-                           /* if x[j] is available, update x[i] and other data */
-                           if (get_flag == 1){
-                              x_loc[i_loc] -= T.data[jj] * xj;
-                              row_count_i--;
-                              nz_done_flags_loc[jj_loc_temp] = 1;
-                           }
-                        }
-                        jj_loc_temp++;
-                     }
-                  }
-                  x_loc[i_loc] /= T.diag[i];
-                  double xi = x_loc[i_loc];
-                  for (int j = 0; j < put_targets[i_loc].size(); j++){
-                     MsgQ_cycles_start = rdtsc();
-                     qPut(&Q, put_targets[i_loc][j], xi);
-                     MsgQ_cycles += rdtsc() - MsgQ_cycles_start;
-                  }
-
-                  jj_loc += jj_diff;
-               }
             }
            /*****************
             *   comp wtime
             *****************/
             else if (ts->input.comp_wtime_flag == 1){
-               for (int i_loc = 0; i_loc < n_loc; i_loc++){ /* loop over rows */
-                  comp_wtime_start = omp_get_wtime();
-                  int i = my_rows[i_loc];
-                  int jj_start = T.start[i];
-                  int jj_end = T.start[i+1];
-                  int jj_diff = jj_end - jj_start;
-                  int row_count_i = jj_diff;
-                  comp_wtime += omp_get_wtime() - comp_wtime_start;
-                  while (row_count_i > 0){ /* loop until x[i] has been completed */
-                     int jj_loc_temp = jj_loc;
-                     for (int jj = jj_start; jj < jj_end; jj++){
-                        int this_nz_done = nz_done_flags_loc[jj_loc_temp];
-                        if (this_nz_done == 0){ /* has this non-zero been used? */
-                           double xj;
-                           int get_flag = qGet(&Q, jj, &xj);
-                           /* if x[j] is available, update x[i] and other data */
-                           if (get_flag == 1){
-                              comp_wtime_start = omp_get_wtime();
-                              x_loc[i_loc] -= T.data[jj] * xj;
-                              row_count_i--;
-                              nz_done_flags_loc[jj_loc_temp] = 1;
-                              comp_wtime += omp_get_wtime() - comp_wtime_start;
-                           }
-                        }
-                        jj_loc_temp++;
-                     }
-                  }
-                  comp_wtime_start = omp_get_wtime();
-                  x_loc[i_loc] /= T.diag[i];
-                  double xi = x_loc[i_loc];
-                  comp_wtime += omp_get_wtime() - comp_wtime_start;
-                  for (int j = 0; j < put_targets[i_loc].size(); j++){
-                     qPut(&Q, put_targets[i_loc][j], xi);
-                  }
-
-                  jj_loc += jj_diff;
-               }
             }
             /******************************
              *   MsgQ no-op and comp no-op
              ******************************/
             else if ((ts->input.MsgQ_noop_flag == 1) && (ts->input.comp_noop_flag == 1)){
-               for (int i_loc = 0; i_loc < n_loc; i_loc++){ /* loop over rows */
-                  int i = my_rows[i_loc];
-                  int jj_start = T.start[i];
-                  int jj_end = T.start[i+1];
-                  int jj_diff = jj_end - jj_start;
-                  int row_count_i = jj_diff;
-                  while (row_count_i > 0){ /* loop until x[i] has been completed */
-                     int jj_loc_temp = jj_loc;
-                     for (int jj = jj_start; jj < jj_end; jj++){
-                        int this_nz_done = nz_done_flags_loc[jj_loc_temp];
-                        if (this_nz_done == 0){ /* has this non-zero been used? */
-                           int get_flag = 1;
-                           /* if x[j] is available, update x[i] and other data */
-                           if (get_flag == 1){
-                              row_count_i--;
-                              nz_done_flags_loc[jj_loc_temp] = 1;
-                           }
-                        }
-                        dummy += jj;
-                        dummy += this_nz_done;
-                        jj_loc_temp++;
-                     }
-                  }
-                  int num_puts_i = put_targets[i_loc].size();
-                  for (int j = 0; j < num_puts_i; j++){
-                     int put_target = put_targets[i_loc][j];
-                     dummy += put_target;
-                  }
-
-                  jj_loc += jj_diff;
-               }
-            }
-           /*****************
-            *   MsgQ no-op
-            *****************/
-            else if (ts->input.MsgQ_noop_flag == 1){
-               for (int i_loc = 0; i_loc < n_loc; i_loc++){ /* loop over rows */
-                  int i = my_rows[i_loc];
-                  int jj_start = T.start[i];
-                  int jj_end = T.start[i+1];
-                  int jj_diff = jj_end - jj_start;
-                  int row_count_i = jj_diff;
-                  while (row_count_i > 0){ /* loop until x[i] has been completed */
-                     int jj_loc_temp = jj_loc;
-                     for (int jj = jj_start; jj < jj_end; jj++){
-                        int this_nz_done = nz_done_flags_loc[jj_loc_temp];
-                        if (this_nz_done == 0){ /* has this non-zero been used? */
-                           double xj;
-                           int get_flag = 1;
-                           /* if x[j] is available, update x[i] and other data */
-                           if (get_flag == 1){
-                              x_loc[i_loc] -= T.data[jj] * xj;
-                              row_count_i--;
-                              nz_done_flags_loc[jj_loc_temp] = 1;
-                           }
-                        }
-                        jj_loc_temp++;
-                     }
-                  }
-                  x_loc[i_loc] /= T.diag[i];
-                  double xi = x_loc[i_loc];
-                  int num_puts_i = put_targets[i_loc].size();
-                  for (int j = 0; j < num_puts_i; j++){
-                     int put_target = put_targets[i_loc][j];
-                     dummy += put_target;
-                  }
-
-                  jj_loc += jj_diff;
-               }
             }
            /*****************
             *   comp no-op
             *****************/
             else if (ts->input.comp_noop_flag == 1){
-               for (int i_loc = 0; i_loc < n_loc; i_loc++){ /* loop over rows */
-                  int i = my_rows[i_loc];
-                  int jj_start = T.start[i];
-                  int jj_end = T.start[i+1];
-                  int jj_diff = jj_end - jj_start;
-                  int row_count_i = jj_diff;
-                  while (row_count_i > 0){ /* loop until x[i] has been completed */
-                     int jj_loc_temp = jj_loc;
-                     for (int jj = jj_start; jj < jj_end; jj++){
-                        int this_nz_done = nz_done_flags_loc[jj_loc_temp];
-                        if (this_nz_done == 0){ /* has this non-zero been used? */
-                           double xj;
-                           int get_flag = qGet(&Q, jj, &xj);
-                           /* if x[j] is available, update x[i] and other data */
-                           if (get_flag == 1){
-                              row_count_i--;
-                              nz_done_flags_loc[jj_loc_temp] = 1;
-                              dummy += xj;
-                           }
-                        }
-                        jj_loc_temp++;
-                     }
-                  }
-                  double xi;
-                  int num_puts_i = put_targets[i_loc].size();
-                  for (int j = 0; j < num_puts_i; j++){
-                     int put_target = put_targets[i_loc][j];
-                     qPut(&Q, put_target, xi);
-                  }
-
-                  jj_loc += jj_diff;
-               }
             }
             /**********************************************
              * standard scheme (no timers, no-ops, etc...)
@@ -1189,8 +991,9 @@ void TriSolve_Async(TriSolveData *ts,
          }
       }
 
+      wtime_stop = omp_get_wtime();
 
-      ts->output.solve_wtime_vec[tid] = omp_get_wtime() - solve_start;
+      ts->output.solve_wtime_vec[tid] = wtime_stop - wtime_start;
 
       ts->output.num_relax[tid] = num_relax;
       ts->output.num_iters[tid] = num_iters;
@@ -1203,16 +1006,15 @@ void TriSolve_Async(TriSolveData *ts,
          free(x_loc);
 
          if (ts->input.MsgQ_wtime_flag == 1){
-            ts->output.MsgQ_wtime_vec[tid] = MsgQ_wtime;
+            ts->output.MsgQ_put_wtime_vec[tid] = MsgQ_put_wtime;
+            ts->output.MsgQ_get_wtime_vec[tid] = MsgQ_get_wtime;
          }
          else if (ts->input.MsgQ_cycles_flag == 1){
-            ts->output.MsgQ_cycles_vec[tid] = MsgQ_cycles;
+            ts->output.MsgQ_put_cycles_vec[tid] = MsgQ_put_cycles;
+            ts->output.MsgQ_get_cycles_vec[tid] = MsgQ_get_cycles;
          }
          else if (ts->input.comp_wtime_flag == 1){
             ts->output.comp_wtime_vec[tid] = comp_wtime;
-         }
-         else if (ts->input.comp_cycles_flag == 1){
-            ts->output.comp_cycles_vec[tid] = comp_cycles;
          }
 
          if (ts->input.mat_storage_type == MATRIX_STORAGE_CSC){

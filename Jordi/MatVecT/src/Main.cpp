@@ -145,17 +145,19 @@ int main (int argc, char *argv[])
    mv.output.solve_wtime_vec = (double *)calloc(mv.input.num_threads, sizeof(double));
    mv.output.num_qGets_vec = (int *)calloc(mv.input.num_threads, sizeof(int));
    mv.output.num_qPuts_vec = (int *)calloc(mv.input.num_threads, sizeof(int));
-
-   if (mv.input.MsgQ_wtime_flag == 1){
-      mv.output.MsgQ_put_wtime_vec = (double *)calloc(mv.input.num_threads, sizeof(double));
-      mv.output.MsgQ_get_wtime_vec = (double *)calloc(mv.input.num_threads, sizeof(double));
-   }
-   else if (mv.input.MsgQ_cycles_flag == 1){
-      mv.output.MsgQ_put_cycles_vec = (uint64_t *)calloc(mv.input.num_threads, sizeof(uint64_t));
-      mv.output.MsgQ_get_cycles_vec = (uint64_t *)calloc(mv.input.num_threads, sizeof(uint64_t));
-   }
-   else if (mv.input.comp_wtime_flag == 1){
-      mv.output.comp_wtime_vec = (double *)calloc(mv.input.num_threads, sizeof(double));
+   
+   if (mv.input.MsgQ_flag == 1){
+      //if (mv.input.MsgQ_wtime_flag == 1){
+         mv.output.MsgQ_put_wtime_vec = (double *)calloc(mv.input.num_threads, sizeof(double));
+         mv.output.MsgQ_get_wtime_vec = (double *)calloc(mv.input.num_threads, sizeof(double));
+      //}
+      //else if (mv.input.MsgQ_cycles_flag == 1){
+         mv.output.MsgQ_put_cycles_vec = (uint64_t *)calloc(mv.input.num_threads, sizeof(uint64_t));
+         mv.output.MsgQ_get_cycles_vec = (uint64_t *)calloc(mv.input.num_threads, sizeof(uint64_t));
+      //}
+      //else if (mv.input.comp_wtime_flag == 1){
+         mv.output.comp_wtime_vec = (double *)calloc(mv.input.num_threads, sizeof(double));
+      //}
    }
 
    srand(0);
@@ -181,8 +183,8 @@ int main (int argc, char *argv[])
 
       double error_norm = sqrt(InnerProd(e, e, num_cols))/sqrt(InnerProd(y_exact, y_exact, num_rows));
 
-      double solve_wtime_sum = accumulate(mv.output.solve_wtime_vec, mv.output.solve_wtime_vec+mv.input.num_threads, 0.0);
-      mv.output.solve_wtime = solve_wtime_sum / (double)mv.input.num_threads;
+      double solve_wtime_sum = accumulate(mv.output.solve_wtime_vec, mv.output.solve_wtime_vec+mv.input.num_threads, (double)0.0);
+      double solve_wtime_mean = solve_wtime_sum / (double)mv.input.num_threads;
 
       double MsgQ_put_wtime_sum = 0.0, MsgQ_put_wtime_mean = 0.0;
       double MsgQ_get_wtime_sum = 0.0, MsgQ_get_wtime_mean = 0.0;
@@ -193,27 +195,27 @@ int main (int argc, char *argv[])
       double comp_wtime_sum = 0.0, comp_wtime_mean = 0.0;
       int num_qGets_sum = 0, num_qPuts_sum = 0;
       if (mv.input.MsgQ_flag == 1){
-         if (mv.input.MsgQ_wtime_flag == 1){
-            MsgQ_put_wtime_sum = accumulate(mv.output.MsgQ_put_wtime_vec, mv.output.MsgQ_put_wtime_vec+mv.input.num_threads, 0.0);
+         //if (mv.input.MsgQ_wtime_flag == 1){
+            MsgQ_put_wtime_sum = accumulate(mv.output.MsgQ_put_wtime_vec, mv.output.MsgQ_put_wtime_vec+mv.input.num_threads, (double)0.0);
             MsgQ_put_wtime_mean = MsgQ_put_wtime_sum / (double)mv.input.num_threads;
 
-            MsgQ_get_wtime_sum = accumulate(mv.output.MsgQ_get_wtime_vec, mv.output.MsgQ_get_wtime_vec+mv.input.num_threads, 0.0);
+            MsgQ_get_wtime_sum = accumulate(mv.output.MsgQ_get_wtime_vec, mv.output.MsgQ_get_wtime_vec+mv.input.num_threads, (double)0.0);
             MsgQ_get_wtime_mean = MsgQ_get_wtime_sum / (double)mv.input.num_threads;
-         }
-         else if (mv.input.MsgQ_cycles_flag == 1){
-            MsgQ_put_cycles_sum = accumulate(mv.output.MsgQ_put_cycles_vec, mv.output.MsgQ_put_cycles_vec+mv.input.num_threads, 0);
+         //}
+         //else if (mv.input.MsgQ_cycles_flag == 1){
+            MsgQ_put_cycles_sum = accumulate(mv.output.MsgQ_put_cycles_vec, mv.output.MsgQ_put_cycles_vec+mv.input.num_threads, (uint64_t)0);
             MsgQ_put_cycles_mean = MsgQ_put_cycles_sum / (double)mv.input.num_threads;
             
-            MsgQ_get_cycles_sum = accumulate(mv.output.MsgQ_get_cycles_vec, mv.output.MsgQ_get_cycles_vec+mv.input.num_threads, 0);
+            MsgQ_get_cycles_sum = accumulate(mv.output.MsgQ_get_cycles_vec, mv.output.MsgQ_get_cycles_vec+mv.input.num_threads, (uint64_t)0);
             MsgQ_get_cycles_mean = MsgQ_get_cycles_sum / (double)mv.input.num_threads;
-         }
-         else if (mv.input.comp_wtime_flag == 1){
+         //}
+         //else if (mv.input.comp_wtime_flag == 1){
             comp_wtime_sum = accumulate(mv.output.comp_wtime_vec, mv.output.comp_wtime_vec+mv.input.num_threads, 0.0);
             comp_wtime_mean = comp_wtime_sum / (double)mv.input.num_threads;
-         }
+         //}
          
-         num_qGets_sum = accumulate(mv.output.num_qGets_vec, mv.output.num_qGets_vec+mv.input.num_threads, 0);
-         num_qPuts_sum = accumulate(mv.output.num_qPuts_vec, mv.output.num_qPuts_vec+mv.input.num_threads, 0);
+         num_qGets_sum = accumulate(mv.output.num_qGets_vec, mv.output.num_qGets_vec+mv.input.num_threads, (int)0);
+         num_qPuts_sum = accumulate(mv.output.num_qPuts_vec, mv.output.num_qPuts_vec+mv.input.num_threads, (int)0);
       }
 
       /* print stats */
@@ -228,10 +230,10 @@ int main (int argc, char *argv[])
                 "Num qPuts = %d\n"
                 "Num qGets = %d\n",
                 error_norm,
-                mv.output.solve_wtime,
-                comp_wtime_sum,
-                MsgQ_put_wtime_sum,
-                MsgQ_get_wtime_sum,
+                solve_wtime_mean,
+                comp_wtime_mean,
+                MsgQ_put_wtime_mean,
+                MsgQ_get_wtime_mean,
                 MsgQ_put_cycles_sum,
                 MsgQ_get_cycles_sum,
                 num_qPuts_sum,
@@ -240,10 +242,10 @@ int main (int argc, char *argv[])
       else {
          printf("%e %e %e %e %e %" PRIu64 " %" PRIu64 " %d %d\n",
                 error_norm,
-                mv.output.solve_wtime,
-                comp_wtime_sum,
-                MsgQ_put_wtime_sum,
-                MsgQ_get_wtime_sum,
+                solve_wtime_mean,
+                comp_wtime_mean,
+                MsgQ_put_wtime_mean,
+                MsgQ_get_wtime_mean,
                 MsgQ_put_cycles_sum,
                 MsgQ_get_cycles_sum,
                 num_qPuts_sum,
@@ -264,16 +266,18 @@ int main (int argc, char *argv[])
    free(mv.output.num_qGets_vec);
    free(mv.output.num_qPuts_vec);
 
-   if (mv.input.MsgQ_wtime_flag == 1){
-      free(mv.output.MsgQ_put_wtime_vec);
-      free(mv.output.MsgQ_get_wtime_vec);
-   }
-   else if (mv.input.MsgQ_cycles_flag == 1){
-      free(mv.output.MsgQ_put_cycles_vec);
-      free(mv.output.MsgQ_get_cycles_vec);
-   }
-   else if (mv.input.comp_wtime_flag == 1){
-      free(mv.output.comp_wtime_vec);
+   if (mv.input.MsgQ_flag == 1){
+      //if (mv.input.MsgQ_wtime_flag == 1){
+         free(mv.output.MsgQ_put_wtime_vec);
+         free(mv.output.MsgQ_get_wtime_vec);
+      //}
+      //else if (mv.input.MsgQ_cycles_flag == 1){
+         free(mv.output.MsgQ_put_cycles_vec);
+         free(mv.output.MsgQ_get_cycles_vec);
+      //}
+      //else if (mv.input.comp_wtime_flag == 1){
+         free(mv.output.comp_wtime_vec);
+      //}
    }
 
    return 0;

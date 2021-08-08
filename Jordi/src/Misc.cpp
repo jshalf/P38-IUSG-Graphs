@@ -31,7 +31,7 @@ int RandInt(int low, int high, double seed)
    return x;
 }
 
-/* Inner product x'*y of two vectors of size ``n'' */
+/* Inner product x'*y of two arrays of size n */
 double InnerProd(double *x, double *y, int n)
 {
    double inner_prod = 0;
@@ -99,7 +99,7 @@ double Residual2Norm_CSC(Matrix A, /* sparse matrix data (input) */
    double r_2norm = 0, b_2norm = 0;
    double *r = (double *)calloc(n, sizeof(double));
    #pragma omp parallel
-   for (int i = 0; i < n; i++){
+   {
       #pragma omp for
       for (int i = 0; i < n; i++){
          r[i] = b[i];

@@ -138,4 +138,11 @@ typedef struct{
    LevelSetData U_lvl_set; /* level set data for upper triangular part */
 }ILUData;
 
+/* Struct used by Histogram benchmark */
+typedef struct{
+   InputData input;
+   OutputData output;
+   int *Tally_expand;
+}HistogramData;
+
 #endif

@@ -46,55 +46,74 @@ int main (int argc, char *argv[])
       #pragma omp parallel
       {
          int tid = omp_get_thread_num();
+         double dummy = 0.0;
+         double b = (double)tid;
 
          uint64_t cycles_sum_loc = 0;
          #pragma omp barrier
 
+
          if (atomic_flag == 1){
+            uint64_t cycles_start = rdtsc();
             for (int iters = 0; iters < num_iters; iters++){   
-               double b = RandDouble(-1.0, 1.0);
-               uint64_t cycles_start = rdtsc();
+               //dummy += b;
                #pragma omp atomic
                a += b;
-               uint64_t cycles_stop = rdtsc();
-               cycles_sum_loc += cycles_stop - cycles_start;
             }
+            uint64_t cycles_stop = rdtsc();
+            cycles_sum_loc += cycles_stop - cycles_start;
          }
          else {
+            uint64_t cycles_start = rdtsc();
             for (int iters = 0; iters < num_iters; iters++){
-               double b = RandDouble(-1.0, 1.0);
-               uint64_t cycles_start = rdtsc();
+               //dummy += b;
                a += b;
-               uint64_t cycles_stop = rdtsc();
-               cycles_sum_loc += cycles_stop - cycles_start;
             }
+            uint64_t cycles_stop = rdtsc();
+            cycles_sum_loc += cycles_stop - cycles_start;
          }
+         //uint64_t cycles_start = rdtsc();
+         //for (int iters = 0; iters < num_iters; iters++){
+         //   dummy += b;
+         //}
+         //uint64_t cycles_stop = rdtsc();
+         //cycles_sum_loc -= cycles_stop - cycles_start;
+
 
          double wtime_sum_loc = 0;
          #pragma omp barrier
 
+
          if (atomic_flag == 1){
+            double wtime_start = omp_get_wtime();
             for (int iters = 0; iters < num_iters; iters++){
-               double b = RandDouble(-1.0, 1.0);
-               double wtime_start = omp_get_wtime();
+               //dummy += b;
                #pragma omp atomic
                a += b;
-               double wtime_stop = omp_get_wtime();
-               wtime_sum_loc += wtime_stop - wtime_start;
             }
+            double wtime_stop = omp_get_wtime();
+            wtime_sum_loc += wtime_stop - wtime_start;
          }
          else {
+            double wtime_start = omp_get_wtime();
             for (int iters = 0; iters < num_iters; iters++){
-               double b = RandDouble(-1.0, 1.0);
-               double wtime_start = omp_get_wtime();
+               //dummy += b;
                a += b;
-               double wtime_stop = omp_get_wtime();
-               wtime_sum_loc += wtime_stop - wtime_start;
             }
+            double wtime_stop = omp_get_wtime();
+            wtime_sum_loc += wtime_stop - wtime_start;
          }
+         //double wtime_start = omp_get_wtime();
+         //for (int iters = 0; iters < num_iters; iters++){
+         //   dummy += b; 
+         //}
+         //double wtime_stop = omp_get_wtime();
+         //wtime_sum_loc -= wtime_stop - wtime_start;
          
          cycles_sum[tid] = cycles_sum_loc;
          wtime_sum[tid] = wtime_sum_loc;
+
+         //PrintDummy(dummy);
       }
 
       uint64_t cycles_mean = 0;

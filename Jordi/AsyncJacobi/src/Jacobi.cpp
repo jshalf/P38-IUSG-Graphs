@@ -11,6 +11,11 @@
 double JacobiRelax_CSR(Matrix A, double *b, double **x, double *x_prev, int i);
 double AsyncJacobiRelax_CSR(Matrix A, double *b, double **x, int i);
 double AsyncJacobiRelaxAtomic_CSR(Matrix A, double *b, double **x, int i);
+
+double JacobiRelax_CSR_loc(Matrix A_loc, double *b_loc, double **x_loc, double *x_prev, int i, int i_loc);
+double AsyncJacobiRelax_CSR_loc(Matrix A_loc, double *b_loc, double **x, int i, int i_loc);
+double AsyncJacobiRelaxAtomic_CSR_loc(Matrix A_loc, double *b_loc, double **x, int i, int i_loc);
+
 double AsyncJacobiRelaxMsgQ_CSR(Matrix A, double *b, double *x_ghost, Queue *Q, int i);
 
 void JacobiRelaxAtomic_CSC(Matrix A, double **r, double z, int i);
@@ -39,12 +44,12 @@ void Jacobi(SolverData *solver,
    }
 
    double *r = (double *)calloc(n, sizeof(double));
-   //if (solver->input.mat_storage_type == MATRIX_STORAGE_CSC){
-   //   #pragma omp parallel for
-   //   for (int i = 0; i < n; i++){
-   //      r[i] = b[i];
-   //   }
-   //}
+   if (solver->input.mat_storage_type == MATRIX_STORAGE_CSC){
+      #pragma omp parallel for
+      for (int i = 0; i < n; i++){
+         r[i] = b[i];
+      }
+   }
 
    double *x_ghost;
    Queue Q, Q_comm;
@@ -77,7 +82,7 @@ void Jacobi(SolverData *solver,
 
    #pragma omp parallel
    {
-      double comp_wtime_start, comp_wtime = 0.0;
+      double comp_wtime_start, comp_wtime_stop, comp_wtime = 0.0;
       double MsgQ_wtime_start, MsgQ_wtime_stop, MsgQ_wtime = 0.0;
       double MsgQ_put_wtime_start, MsgQ_put_wtime_stop, MsgQ_put_wtime = 0.0;
       double MsgQ_get_wtime_start, MsgQ_get_wtime_stop, MsgQ_get_wtime = 0.0;
@@ -107,8 +112,14 @@ void Jacobi(SolverData *solver,
       r_loc = (double *)calloc(n_loc, sizeof(double));
       A_loc.diag = (double *)calloc(n_loc, sizeof(double));
       A_loc.start = (int *)calloc(n_loc+1, sizeof(int));
-      A_loc.j = (int *)calloc(nnz_loc, sizeof(int));
       A_loc.data = (double *)calloc(nnz_loc, sizeof(double));
+
+      if (solver->input.mat_storage_type == MATRIX_STORAGE_CSC){
+         A_loc.i = (int *)calloc(nnz_loc, sizeof(int));
+      }
+      else {
+         A_loc.j = (int *)calloc(nnz_loc, sizeof(int));
+      }
       
       i_loc = 0, jj_loc = 0;
       #pragma omp for schedule(static, lump) nowait
@@ -118,7 +129,12 @@ void Jacobi(SolverData *solver,
          A_loc.diag[i_loc] = A.diag[i];
          int i_nnz = 0;
          for (int jj = A.start[i]; jj < A.start[i+1]; jj++){
-            A_loc.j[jj_loc] = A.j[jj];
+            if (solver->input.mat_storage_type == MATRIX_STORAGE_CSC){
+               A_loc.i[jj_loc] = A.i[jj];
+            }
+            else {
+               A_loc.j[jj_loc] = A.j[jj];
+            }
             A_loc.data[jj_loc] = A.data[jj];
             jj_loc++;
             i_nnz++;
@@ -288,24 +304,23 @@ void Jacobi(SolverData *solver,
                               num_qPuts++;
                            }
                         }
-                        MsgQ_put_wtime += omp_get_wtime() - MsgQ_wtime_start;
+                        MsgQ_wtime_stop = omp_get_wtime();
+                        MsgQ_put_wtime += MsgQ_wtime_stop - MsgQ_wtime_start;
 
                         MsgQ_wtime_start = omp_get_wtime();
                         for (i_loc = 0; i_loc < n_loc; i_loc++){
                            int i = my_rows[i_loc];
                            int get_flag;
                            double z_accum = 0.0, z_recv = 0.0;
-                           while(1) {
-                              get_flag = qGet(&Q, i, &z_recv);
-                              if (get_flag == 0){
-                                 break;
-                              }
+                           get_flag = qGet(&Q, i, &z_recv);
+                           if (get_flag == 1){
                               z_accum += z_recv;
                               num_qGets++;
-                           };
+                           }
                            r_loc[i_loc] -= z_accum;
                         }
-                        MsgQ_get_wtime += omp_get_wtime() - MsgQ_wtime_start;
+                        MsgQ_wtime_stop = omp_get_wtime();
+                        MsgQ_get_wtime += MsgQ_wtime_stop - MsgQ_wtime_start;
 
                         for (i_loc = 0; i_loc < n_loc; i_loc++){
                            double z = r_loc[i_loc] / A_loc.diag[i_loc];
@@ -324,17 +339,20 @@ void Jacobi(SolverData *solver,
                               dummy_num_qPuts++;
                            }
                         }
-                        MsgQ_put_wtime -= omp_get_wtime() - MsgQ_wtime_start;
+                        MsgQ_wtime_stop = omp_get_wtime();
+                        MsgQ_put_wtime -= MsgQ_wtime_stop - MsgQ_wtime_start;
 
                         MsgQ_wtime_start = omp_get_wtime();
                         for (i_loc = 0; i_loc < n_loc; i_loc++){
                            int i = my_rows[i_loc];
-                           double z_accum = 1.0;
+                           double z_accum = 1.0, z_recv = 1.0;
+                           z_accum += z_recv;
                            r_loc[i_loc] -= z_accum;
                            dummy_num_qGets++;
                            dummy += i;
                         }
-                        MsgQ_get_wtime -= omp_get_wtime() - MsgQ_wtime_start;
+                        MsgQ_wtime_stop = omp_get_wtime();
+                        MsgQ_get_wtime -= MsgQ_wtime_stop - MsgQ_wtime_start;
                      }
                   }
                   /*****************
@@ -343,7 +361,6 @@ void Jacobi(SolverData *solver,
                   else if (solver->input.MsgQ_cycles_flag == 1){
                      for (int iter = 0; iter < num_iters; iter++){
                         for (i_loc = 0; i_loc < n_loc; i_loc++){
-                           int i = my_rows[i_loc];
                            double z = r_loc[i_loc] / A_loc.diag[i_loc];
                            x_loc[i_loc] += z;
                            for (jj_loc = A_loc.start[i_loc]; jj_loc < A_loc.start[i_loc+1]; jj_loc++){
@@ -354,36 +371,31 @@ void Jacobi(SolverData *solver,
 
                         MsgQ_cycles_start = rdtsc();
                         for (i_loc = 0; i_loc < n_loc; i_loc++){
-                           int i = my_rows[i_loc];
                            for (jj_loc = A_loc.start[i_loc]; jj_loc < A_loc.start[i_loc+1]; jj_loc++){
                               int j = A_loc.j[jj_loc];
                               qPut(&Q, j, z_loc[jj_loc]);
                               num_qPuts++;
                            }
                         }
-                        MsgQ_put_cycles += rdtsc() - MsgQ_cycles_start;
+                        MsgQ_cycles_stop = rdtsc();
+                        MsgQ_put_cycles += MsgQ_cycles_stop - MsgQ_cycles_start;
 
                         MsgQ_cycles_start = rdtsc();
                         for (i_loc = 0; i_loc < n_loc; i_loc++){
                            int i = my_rows[i_loc];
                            int get_flag;
                            double z_accum = 0.0, z_recv = 0.0;
-                           while(1) {
-                              get_flag = qGet(&Q, i, &z_recv);
-                              if (get_flag == 0){
-                                 break;
-                              }
+                           get_flag = qGet(&Q, i, &z_recv);
+                           if (get_flag == 1){
                               z_accum += z_recv;
                               num_qGets++;
-                           };
+                           }
                            r_loc[i_loc] -= z_accum;
                         }
-                        MsgQ_get_cycles += rdtsc() - MsgQ_cycles_start;
-                     }
+                        MsgQ_cycles_stop = rdtsc();
+                        MsgQ_get_cycles += MsgQ_cycles_stop - MsgQ_cycles_start;
 
-                     for (int iter = 0; iter < num_iters; iter++){
                         for (i_loc = 0; i_loc < n_loc; i_loc++){
-                           int i = my_rows[i_loc];
                            double z = r_loc[i_loc] / A_loc.diag[i_loc];
                            x_loc[i_loc] += z;
                            for (jj_loc = A_loc.start[i_loc]; jj_loc < A_loc.start[i_loc+1]; jj_loc++){
@@ -394,23 +406,26 @@ void Jacobi(SolverData *solver,
 
                         MsgQ_cycles_start = rdtsc();
                         for (i_loc = 0; i_loc < n_loc; i_loc++){
-                           int i = my_rows[i_loc];
                            for (jj_loc = A_loc.start[i_loc]; jj_loc < A_loc.start[i_loc+1]; jj_loc++){
                               int j = A_loc.j[jj_loc];
-                              dummy_num_qPuts++;
                               dummy += (j + z_loc[jj_loc]);
+                              dummy_num_qPuts++;
                            }
                         }
-                        MsgQ_put_cycles -= rdtsc() - MsgQ_cycles_start;
+                        MsgQ_cycles_stop = rdtsc(); 
+                        MsgQ_put_cycles -= MsgQ_cycles_stop - MsgQ_cycles_start;
 
                         MsgQ_cycles_start = rdtsc();
                         for (i_loc = 0; i_loc < n_loc; i_loc++){
                            int i = my_rows[i_loc];
-                           double z_accum = 1.0;
+                           double z_accum = 1.0, z_recv = 1.0;
+                           z_accum += z_recv;
                            r_loc[i_loc] -= z_accum;
                            dummy_num_qGets++;
+                           dummy += i;
                         }
-                        MsgQ_get_cycles -= rdtsc() - MsgQ_cycles_start;
+                        MsgQ_cycles_stop = rdtsc();
+                        MsgQ_get_cycles -= MsgQ_cycles_stop - MsgQ_cycles_start;
                      }
                   }
                   /*****************
@@ -427,7 +442,8 @@ void Jacobi(SolverData *solver,
                               z_loc[jj_loc] = A_loc.data[jj_loc] * z;
                            }
                         }
-                        comp_wtime += omp_get_wtime() - comp_wtime_start;
+                        comp_wtime_stop = omp_get_wtime();
+                        comp_wtime += comp_wtime_stop - comp_wtime_start;
 
                         for (i_loc = 0; i_loc < n_loc; i_loc++){
                            for (jj_loc = A_loc.start[i_loc]; jj_loc < A_loc.start[i_loc+1]; jj_loc++){
@@ -441,14 +457,11 @@ void Jacobi(SolverData *solver,
                            int i = my_rows[i_loc];
                            int get_flag;
                            double z_accum = 0.0, z_recv = 0.0;
-                           while(1) {
-                              get_flag = qGet(&Q, i, &z_recv);
-                              if (get_flag == 0){
-                                 break;
-                              }
+                           get_flag = qGet(&Q, i, &z_recv);
+                           if (get_flag == 1){
                               z_accum += z_recv;
                               num_qGets++;
-                           };
+                           }
                            r_loc[i_loc] -= z_accum;
                         }
 
@@ -477,7 +490,8 @@ void Jacobi(SolverData *solver,
                            dummy_num_qGets++;
                            dummy += i;
                         }
-                        comp_wtime += omp_get_wtime() - comp_wtime_start;
+                        comp_wtime_stop = omp_get_wtime();
+                        comp_wtime += comp_wtime_stop - comp_wtime_start;
                      }
                   }
                   /******************************
@@ -521,14 +535,11 @@ void Jacobi(SolverData *solver,
                            int i = my_rows[i_loc];
                            int get_flag;
                            double z_accum = 0.0, z_recv = 0.0;
-                           while(1) {
-                              get_flag = qGet(&Q, i, &z_recv);
-                              if (get_flag == 0){
-                                 break;
-                              }
+                           get_flag = qGet(&Q, i, &z_recv);
+                           if (get_flag == 1){
                               z_accum += z_recv;
                               num_qGets++;
-                           };
+                           }
                            r_loc[i_loc] -= z_accum;
                         }
                      }
@@ -632,17 +643,17 @@ void Jacobi(SolverData *solver,
             (*x)[i] = x_loc[i_loc];
          }
 
-         if (solver->input.MsgQ_wtime_flag == 1){
+         //if (solver->input.MsgQ_wtime_flag == 1){
             solver->output.MsgQ_put_wtime_vec[tid] = MsgQ_put_wtime;
             solver->output.MsgQ_get_wtime_vec[tid] = MsgQ_get_wtime;
-         }
-         else if (solver->input.MsgQ_cycles_flag == 1){
+         //}
+         //else if (solver->input.MsgQ_cycles_flag == 1){
             solver->output.MsgQ_put_cycles_vec[tid] = MsgQ_put_cycles;
             solver->output.MsgQ_get_cycles_vec[tid] = MsgQ_get_cycles;
-         }
-         else if (solver->input.comp_wtime_flag == 1){
+         //}
+         //else if (solver->input.comp_wtime_flag == 1){
             solver->output.comp_wtime_vec[tid] = comp_wtime;
-         }
+         //}
 
          solver->output.num_qGets_vec[tid] = num_qGets;
          solver->output.num_qPuts_vec[tid] = num_qPuts;
@@ -659,6 +670,15 @@ void Jacobi(SolverData *solver,
 
       free(my_rows);
       free(r_loc);
+      free(A_loc.diag);
+      free(A_loc.data);
+      free(A_loc.start);
+      if (solver->input.mat_storage_type == MATRIX_STORAGE_CSC){
+         free(A_loc.i);
+      }
+      else {
+         free(A_loc.j);
+      }
    }
 
    if (solver->input.MsgQ_flag == 1){
@@ -725,6 +745,48 @@ double AsyncJacobiRelax_CSR(Matrix A, double *b, double **x, int i)
       res -= A.data[jj] * (*x)[ii];
    }
    return (*x)[i] + res / A.diag[i];
+}
+
+double JacobiRelax_CSR_loc(Matrix A_loc, /* sparse matrix */
+                           double *b_loc, /* right-hadn side */
+                           double **x_loc, /* current approximation to the solution (output) */
+                           double *x_prev, /* approximation from previous iteration */
+                           int i, /* row to relax */
+                           int i_loc
+                           )
+{
+   /* compute residual for row i */
+   double res = b_loc[i_loc]; /* initialize residual */
+   for (int jj_loc = A_loc.start[i_loc]; jj_loc < A_loc.start[i_loc+1]; jj_loc++){ /* loop over non-zeros in this row */
+      int ii = A_loc.j[jj_loc]; /* column index */
+      res -= A_loc.data[jj_loc] * x_prev[ii]; /* decrement residual */
+   }
+   /* return relaxation */
+   return (*x_loc)[i_loc] + res / A_loc.diag[i_loc];
+}
+
+double AsyncJacobiRelaxAtomic_CSR_loc(Matrix A_loc, double *b_loc, double **x, int i, int i_loc)
+{
+   double res = b_loc[i_loc];
+   for (int jj_loc = A_loc.start[i_loc]; jj_loc < A_loc.start[i_loc+1]; jj_loc++){
+      int ii = A_loc.j[jj_loc];
+      double xii;
+      /* atomically read element A.j[jj] of x */
+      #pragma omp atomic read
+      xii = (*x)[ii];
+      res -= A_loc.data[jj_loc] * xii;
+   }
+   return (*x)[i] + res / A_loc.diag[i_loc];
+}
+
+double AsyncJacobiRelax_CSR_loc(Matrix A_loc, double *b_loc, double **x, int i, int i_loc)
+{
+   double res = b_loc[i_loc];
+   for (int jj_loc = A_loc.start[i_loc]; jj_loc < A_loc.start[i_loc+1]; jj_loc++){
+      int ii = A_loc.j[jj_loc];
+      res -= A_loc.data[jj_loc] * (*x)[ii];
+   }
+   return (*x)[i] + res / A_loc.diag[i_loc];
 }
 
 double AsyncJacobiRelaxMsgQ_CSR(Matrix A, double *b, double *x_ghost, Queue *Q, int i)

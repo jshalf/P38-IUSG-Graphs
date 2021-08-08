@@ -153,6 +153,7 @@ int main (int argc, char *argv[])
    else {
       Laplace_2D_5pt(solver.input, &A, m);
    }
+
    int n = A.n;
    double *x = (double *)calloc(n, sizeof(double));
    double *b = (double *)calloc(n, sizeof(double));
@@ -161,16 +162,18 @@ int main (int argc, char *argv[])
    solver.output.num_qGets_vec = (int *)calloc(solver.input.num_threads, sizeof(int));
    solver.output.num_qPuts_vec = (int *)calloc(solver.input.num_threads, sizeof(int));
 
-   if (solver.input.MsgQ_wtime_flag == 1){
-      solver.output.MsgQ_put_wtime_vec = (double *)calloc(solver.input.num_threads, sizeof(double));
-      solver.output.MsgQ_get_wtime_vec = (double *)calloc(solver.input.num_threads, sizeof(double));
-   }
-   else if (solver.input.MsgQ_cycles_flag == 1){
-      solver.output.MsgQ_put_cycles_vec = (uint64_t *)calloc(solver.input.num_threads, sizeof(uint64_t));
-      solver.output.MsgQ_get_cycles_vec = (uint64_t *)calloc(solver.input.num_threads, sizeof(uint64_t));
-   }
-   else if (solver.input.comp_wtime_flag == 1){
-      solver.output.comp_wtime_vec = (double *)calloc(solver.input.num_threads, sizeof(double));
+   if (solver.input.MsgQ_flag == 1){
+      //if (solver.input.MsgQ_wtime_flag == 1){
+         solver.output.MsgQ_put_wtime_vec = (double *)calloc(solver.input.num_threads, sizeof(double));
+         solver.output.MsgQ_get_wtime_vec = (double *)calloc(solver.input.num_threads, sizeof(double));
+      //}
+      //else if (solver.input.MsgQ_cycles_flag == 1){
+         solver.output.MsgQ_put_cycles_vec = (uint64_t *)calloc(solver.input.num_threads, sizeof(uint64_t));
+         solver.output.MsgQ_get_cycles_vec = (uint64_t *)calloc(solver.input.num_threads, sizeof(uint64_t));
+      //}
+      //else if (solver.input.comp_wtime_flag == 1){
+         solver.output.comp_wtime_vec = (double *)calloc(solver.input.num_threads, sizeof(double));
+      //}
    }
 
    for (int run = 1; run <= num_runs; run++){
@@ -185,7 +188,7 @@ int main (int argc, char *argv[])
       /* run Jacobi solver */
       Jacobi(&solver, A, b, &x);
 
-      double solve_wtime_sum = accumulate(solver.output.solve_wtime_vec, solver.output.solve_wtime_vec+solver.input.num_threads, 0.0);
+      double solve_wtime_sum = accumulate(solver.output.solve_wtime_vec, solver.output.solve_wtime_vec+solver.input.num_threads, (double)0.0);
       solver.output.solve_wtime = solve_wtime_sum / (double)solver.input.num_threads;
 
       double res_norm;
@@ -198,6 +201,7 @@ int main (int argc, char *argv[])
 
       double MsgQ_put_wtime_sum = 0.0, MsgQ_put_wtime_mean = 0.0;
       double MsgQ_get_wtime_sum = 0.0, MsgQ_get_wtime_mean = 0.0;
+      uint64_t uint64_t_accum_start = 0;
       uint64_t MsgQ_put_cycles_sum = 0;
       uint64_t MsgQ_get_cycles_sum = 0;
       double MsgQ_put_cycles_mean = 0.0;
@@ -205,27 +209,27 @@ int main (int argc, char *argv[])
       double comp_wtime_sum = 0.0, comp_wtime_mean = 0.0;
       int num_qGets_sum = 0, num_qPuts_sum = 0;
       if (solver.input.MsgQ_flag == 1){
-         if (solver.input.MsgQ_wtime_flag == 1){
-            MsgQ_put_wtime_sum = accumulate(solver.output.MsgQ_put_wtime_vec, solver.output.MsgQ_put_wtime_vec+solver.input.num_threads, 0.0);
+         //if (solver.input.MsgQ_wtime_flag == 1){
+            MsgQ_put_wtime_sum = accumulate(solver.output.MsgQ_put_wtime_vec, solver.output.MsgQ_put_wtime_vec+solver.input.num_threads, (double)0.0);
             MsgQ_put_wtime_mean = MsgQ_put_wtime_sum / (double)solver.input.num_threads;
 
-            MsgQ_get_wtime_sum = accumulate(solver.output.MsgQ_get_wtime_vec, solver.output.MsgQ_get_wtime_vec+solver.input.num_threads, 0.0);
+            MsgQ_get_wtime_sum = accumulate(solver.output.MsgQ_get_wtime_vec, solver.output.MsgQ_get_wtime_vec+solver.input.num_threads, (double)0.0);
             MsgQ_get_wtime_mean = MsgQ_get_wtime_sum / (double)solver.input.num_threads;
-         }
-         else if (solver.input.MsgQ_cycles_flag == 1){
-            MsgQ_put_cycles_sum = accumulate(solver.output.MsgQ_put_cycles_vec, solver.output.MsgQ_put_cycles_vec+solver.input.num_threads, 0);
+         //}
+         //else if (solver.input.MsgQ_cycles_flag == 1){
+            MsgQ_put_cycles_sum = accumulate(solver.output.MsgQ_put_cycles_vec, solver.output.MsgQ_put_cycles_vec+solver.input.num_threads, (uint64_t)0);
             MsgQ_put_cycles_mean = MsgQ_put_cycles_sum / (double)solver.input.num_threads;
 
-            MsgQ_get_cycles_sum = accumulate(solver.output.MsgQ_get_cycles_vec, solver.output.MsgQ_get_cycles_vec+solver.input.num_threads, 0);
+            MsgQ_get_cycles_sum = accumulate(solver.output.MsgQ_get_cycles_vec, solver.output.MsgQ_get_cycles_vec+solver.input.num_threads, (uint64_t)0);
             MsgQ_get_cycles_mean = MsgQ_get_cycles_sum / (double)solver.input.num_threads;
-         }
-         else if (solver.input.comp_wtime_flag == 1){
-            comp_wtime_sum = accumulate(solver.output.comp_wtime_vec, solver.output.comp_wtime_vec+solver.input.num_threads, 0.0);
+         //}
+         //else if (solver.input.comp_wtime_flag == 1){
+            comp_wtime_sum = accumulate(solver.output.comp_wtime_vec, solver.output.comp_wtime_vec+solver.input.num_threads, (double)0.0);
             comp_wtime_mean = comp_wtime_sum / (double)solver.input.num_threads;
-         }
+         //}
 
-         num_qGets_sum = accumulate(solver.output.num_qGets_vec, solver.output.num_qGets_vec+solver.input.num_threads, 0);
-         num_qPuts_sum = accumulate(solver.output.num_qPuts_vec, solver.output.num_qPuts_vec+solver.input.num_threads, 0);
+         num_qGets_sum = accumulate(solver.output.num_qGets_vec, solver.output.num_qGets_vec+solver.input.num_threads, (int)0);
+         num_qPuts_sum = accumulate(solver.output.num_qPuts_vec, solver.output.num_qPuts_vec+solver.input.num_threads, (int)0);
       }
 
       /* print solver stats */
@@ -241,9 +245,9 @@ int main (int argc, char *argv[])
                 "Num qGets = %d\n",
                 res_norm,
                 solver.output.solve_wtime,
-                comp_wtime_sum,
-                MsgQ_put_wtime_sum,
-                MsgQ_get_wtime_sum,
+                comp_wtime_mean,
+                MsgQ_put_wtime_mean,
+                MsgQ_get_wtime_mean,
                 MsgQ_put_cycles_sum,
                 MsgQ_get_cycles_sum,
                 num_qPuts_sum,
@@ -253,9 +257,9 @@ int main (int argc, char *argv[])
          printf("%e %e %e %e %e %" PRIu64 " %" PRIu64 " %d %d\n",
                 res_norm,
                 solver.output.solve_wtime,
-                comp_wtime_sum,
-                MsgQ_put_wtime_sum,
-                MsgQ_get_wtime_sum,
+                comp_wtime_mean,
+                MsgQ_put_wtime_mean,
+                MsgQ_get_wtime_mean,
                 MsgQ_put_cycles_sum,
                 MsgQ_get_cycles_sum,
                 num_qPuts_sum,
@@ -270,16 +274,18 @@ int main (int argc, char *argv[])
    free(solver.output.num_qGets_vec);
    free(solver.output.num_qPuts_vec);
 
-   if (solver.input.MsgQ_wtime_flag == 1){
-      free(solver.output.MsgQ_put_wtime_vec);
-      free(solver.output.MsgQ_get_wtime_vec);
-   }
-   else if (solver.input.MsgQ_cycles_flag == 1){
-      free(solver.output.MsgQ_put_cycles_vec);
-      free(solver.output.MsgQ_get_cycles_vec);
-   }
-   else if (solver.input.comp_wtime_flag == 1){
-      free(solver.output.comp_wtime_vec);
+   if (solver.input.MsgQ_flag == 1){
+      //if (solver.input.MsgQ_wtime_flag == 1){
+         free(solver.output.MsgQ_put_wtime_vec);
+         free(solver.output.MsgQ_get_wtime_vec);
+      //}
+      //else if (solver.input.MsgQ_cycles_flag == 1){
+         free(solver.output.MsgQ_put_cycles_vec);
+         free(solver.output.MsgQ_get_cycles_vec);
+      //}
+      //else if (solver.input.comp_wtime_flag == 1){
+         free(solver.output.comp_wtime_vec);
+      //}
    }
 
    return 0;
