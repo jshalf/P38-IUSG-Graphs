@@ -3,6 +3,9 @@
 
 #include "Main.hpp"
 
+#define PROGRESS_QPUT 0
+#define PROGRESS_QGET 1
+
 typedef struct {
    queue<double> *wtime = NULL;
    queue<int> *idx = NULL;

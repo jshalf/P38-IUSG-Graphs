@@ -17,6 +17,7 @@ int main (int argc, char *argv[])
    hist.input.MsgQ_cycles_flag = 0;
    hist.input.comp_noop_flag = 0;
    hist.input.MsgQ_noop_flag = 0;
+   hist.input.mat_storage_type = MATRIX_STORAGE_CSR;
    int verbose_output = 0;
    int num_runs = 1;
    int m = 10; 

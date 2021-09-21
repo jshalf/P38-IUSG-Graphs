@@ -2,6 +2,10 @@
 #include "MsgQ.hpp"
 #include "Misc.hpp"
 
+int tid_root = 0;
+int progress_num_gets;
+int progress_recv_count;
+
 /* initialize mutex lock */
 void qInitLock(Queue *Q)
 {

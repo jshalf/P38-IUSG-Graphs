@@ -230,17 +230,20 @@ int main (int argc, char *argv[])
    ts.output.num_iters = (int *)calloc(ts.input.num_threads, sizeof(int));
 
    if (ts.input.MsgQ_flag == 1){
-      if (ts.input.MsgQ_wtime_flag == 1){
+      //if (ts.input.MsgQ_wtime_flag == 1){
          ts.output.MsgQ_put_wtime_vec = (double *)calloc(ts.input.num_threads, sizeof(double));
          ts.output.MsgQ_get_wtime_vec = (double *)calloc(ts.input.num_threads, sizeof(double));
-      }
-      else if (ts.input.MsgQ_cycles_flag == 1){
+      //}
+      //else if (ts.input.MsgQ_cycles_flag == 1){
          ts.output.MsgQ_put_cycles_vec = (uint64_t *)calloc(ts.input.num_threads, sizeof(uint64_t));
          ts.output.MsgQ_get_cycles_vec = (uint64_t *)calloc(ts.input.num_threads, sizeof(uint64_t));
-      }
-      else if (ts.input.comp_wtime_flag == 1){
+      //}
+      //else if (ts.input.comp_wtime_flag == 1){
          ts.output.comp_wtime_vec = (double *)calloc(ts.input.num_threads, sizeof(double));
-      }
+      //}
+      
+      ts.output.num_qGets_vec = (int *)calloc(ts.input.num_threads, sizeof(int));
+      ts.output.num_qPuts_vec = (int *)calloc(ts.input.num_threads, sizeof(int));
    }
 
    /* serial solver first */
@@ -259,7 +262,7 @@ int main (int argc, char *argv[])
       
       lvl_n_min = *min_element(ts.L_lvl_set.level_size.begin(), ts.L_lvl_set.level_size.end());
       lvl_n_max = *max_element(ts.L_lvl_set.level_size.begin(), ts.L_lvl_set.level_size.end());
-      lvl_n_mean = (double)accumulate(ts.L_lvl_set.level_size.begin(), ts.L_lvl_set.level_size.end(), 0) / ts.L_lvl_set.level_size.size(); 
+      lvl_n_mean = (double)accumulate(ts.L_lvl_set.level_size.begin(), ts.L_lvl_set.level_size.end(), (int)0) / ts.L_lvl_set.level_size.size(); 
       num_lvls = ts.L_lvl_set.level_size.size();
    }
 
@@ -303,34 +306,34 @@ int main (int argc, char *argv[])
       double comp_wtime_sum = 0.0, comp_wtime_mean = 0.0;
       int num_qGets_sum = 0, num_qPuts_sum = 0;
       if (ts.input.MsgQ_flag == 1){
-         if (ts.input.MsgQ_wtime_flag == 1){
-            MsgQ_put_wtime_sum = accumulate(ts.output.MsgQ_put_wtime_vec, ts.output.MsgQ_put_wtime_vec+ts.input.num_threads, 0.0);
+         //if (ts.input.MsgQ_wtime_flag == 1){
+            MsgQ_put_wtime_sum = accumulate(ts.output.MsgQ_put_wtime_vec, ts.output.MsgQ_put_wtime_vec+ts.input.num_threads, (double)0.0);
             MsgQ_put_wtime_mean = MsgQ_put_wtime_sum / (double)ts.input.num_threads;
 
-            MsgQ_get_wtime_sum = accumulate(ts.output.MsgQ_get_wtime_vec, ts.output.MsgQ_get_wtime_vec+ts.input.num_threads, 0.0);
+            MsgQ_get_wtime_sum = accumulate(ts.output.MsgQ_get_wtime_vec, ts.output.MsgQ_get_wtime_vec+ts.input.num_threads, (double)0.0);
             MsgQ_get_wtime_mean = MsgQ_get_wtime_sum / (double)ts.input.num_threads;
-         }
-         else if (ts.input.MsgQ_cycles_flag == 1){
-            MsgQ_put_cycles_sum = accumulate(ts.output.MsgQ_put_cycles_vec, ts.output.MsgQ_put_cycles_vec+ts.input.num_threads, 0);
+         //}
+         //else if (ts.input.MsgQ_cycles_flag == 1){
+            MsgQ_put_cycles_sum = accumulate(ts.output.MsgQ_put_cycles_vec, ts.output.MsgQ_put_cycles_vec+ts.input.num_threads, (uint64_t)0);
             MsgQ_put_cycles_mean = MsgQ_put_cycles_sum / (double)ts.input.num_threads;
 
-            MsgQ_get_cycles_sum = accumulate(ts.output.MsgQ_get_cycles_vec, ts.output.MsgQ_get_cycles_vec+ts.input.num_threads, 0);
+            MsgQ_get_cycles_sum = accumulate(ts.output.MsgQ_get_cycles_vec, ts.output.MsgQ_get_cycles_vec+ts.input.num_threads, (uint64_t)0);
             MsgQ_get_cycles_mean = MsgQ_get_cycles_sum / (double)ts.input.num_threads;
-         }
-         else if (ts.input.comp_wtime_flag == 1){
-            comp_wtime_sum = accumulate(ts.output.comp_wtime_vec, ts.output.comp_wtime_vec+ts.input.num_threads, 0.0);
+         //}
+         //else if (ts.input.comp_wtime_flag == 1){
+            comp_wtime_sum = accumulate(ts.output.comp_wtime_vec, ts.output.comp_wtime_vec+ts.input.num_threads, (double)0.0);
             comp_wtime_mean = comp_wtime_sum / (double)ts.input.num_threads;
-         }
+         //}
 
-         num_qGets_sum = accumulate(ts.output.num_qGets_vec, ts.output.num_qGets_vec+ts.input.num_threads, 0);
-         num_qPuts_sum = accumulate(ts.output.num_qPuts_vec, ts.output.num_qPuts_vec+ts.input.num_threads, 0);
+         num_qGets_sum = accumulate(ts.output.num_qGets_vec, ts.output.num_qGets_vec+ts.input.num_threads, (int)0);
+         num_qPuts_sum = accumulate(ts.output.num_qPuts_vec, ts.output.num_qPuts_vec+ts.input.num_threads, (int)0);
       }
 
       /* print output stats */
       if (verbose_output){
          printf("Solve forward-error L2-norm = %e\n"
-                "Overall solve wtime = %e\n"
                 "Solve wall-clock time = %e\n"
+                "Overall solve wtime = %e\n"
                 "Setup wall-clock time = %e\n"
                 "Sequential solver wall-clock time = %e\n"
                 "Mean relaxations = %f\n"
@@ -392,17 +395,19 @@ int main (int argc, char *argv[])
    free(ts.output.num_iters);
 
    if (ts.input.MsgQ_flag == 1){
-      if (ts.input.MsgQ_wtime_flag == 1){
+      //if (ts.input.MsgQ_wtime_flag == 1){
          free(ts.output.MsgQ_put_wtime_vec);
          free(ts.output.MsgQ_get_wtime_vec);
-      }
-      else if (ts.input.MsgQ_cycles_flag == 1){
+      //}
+      //else if (ts.input.MsgQ_cycles_flag == 1){
          free(ts.output.MsgQ_put_cycles_vec);
          free(ts.output.MsgQ_get_cycles_vec);
-      }
-      else if (ts.input.comp_wtime_flag == 1){
+      //}
+      //else if (ts.input.comp_wtime_flag == 1){
          free(ts.output.comp_wtime_vec);
-      }
+      //}
+      free(ts.output.num_qPuts_vec);
+      free(ts.output.num_qGets_vec);
    }
 
    return 0;
