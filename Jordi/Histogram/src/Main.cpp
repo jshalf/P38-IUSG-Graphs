@@ -8,9 +8,6 @@ int main (int argc, char *argv[])
    HistogramData hist;
    hist.input.num_threads = 1;
    hist.input.atomic_flag = 1;
-   hist.input.AAT_flag = 0;
-   hist.input.expand_flag = 0;
-   hist.input.coo_flag = 0;
    hist.input.MsgQ_flag = 0;
    hist.input.comp_wtime_flag = 0;
    hist.input.MsgQ_wtime_flag = 0;
@@ -18,6 +15,7 @@ int main (int argc, char *argv[])
    hist.input.comp_noop_flag = 0;
    hist.input.MsgQ_noop_flag = 0;
    hist.input.mat_storage_type = MATRIX_STORAGE_CSR;
+   hist.input.reduce_flag = 0;
    int verbose_output = 0;
    int num_runs = 1;
    int m = 10; 
@@ -36,6 +34,15 @@ int main (int argc, char *argv[])
             arg_index++;
             problem_type = PROBLEM_FILE;
             strcpy(mat_file_str, argv[arg_index]);
+         }
+      }
+      else if (strcmp(argv[arg_index], "-algo") == 0){ /* method */
+         arg_index++;
+         if (strcmp(argv[arg_index], "atomic") == 0){ /* atomic method that treats Matrix as CSC */
+            hist.input.reduce_flag = 0;
+         }
+         else if (strcmp(argv[arg_index], "reduce") == 0){ /* each thread uses a local vector which are summed at the end */
+            hist.input.reduce_flag = 1;
          }
       }
       else if (strcmp(argv[arg_index], "-n") == 0){ /* ``size'' of matrix. n*n rows for Laplace, n rows otherwise */
@@ -155,8 +162,21 @@ int main (int argc, char *argv[])
    srand(0);
 
    Histogram_Seq(&hist, A.j, n_index, Tally_exact, n_tally);
+   //#pragma omp parallel
+   //{
+   //   double dummy = 0.0;
+   //   #pragma omp for schedule(static, 1) nowait
+   //   for (int i = 0; i < n_index; i++){
+   //      dummy += index[i];
+   //   }
+   //   PrintDummy(dummy);
+   //}
 
    for (int run = 1; run <= num_runs; run++){
+      for (int i = 0; i < n_tally; i++){
+         Tally[i] = 0;
+      }
+
       /* parallel Histogram */
       Histogram_Par(&hist, A.j, n_index, Tally, n_tally);
 

@@ -339,34 +339,34 @@ void TriSolve_Async(TriSolveData *ts,
          }
 
          x_loc = (double *)calloc(n_loc, sizeof(double));
-         T_loc.diag = (double *)calloc(n_loc, sizeof(double));
-         T_loc.start = (int *)calloc(n_loc+1, sizeof(int));
-         T_loc.data = (double *)calloc(nnz_loc, sizeof(double));
-         if (ts->input.mat_storage_type == MATRIX_STORAGE_CSC){
-            T_loc.i = (int *)calloc(nnz_loc, sizeof(int));
-         }
-         else {
-            T_loc.j = (int *)calloc(nnz_loc, sizeof(int));
-         }
-         i_loc = 0, jj_loc = 0;
-         #pragma omp for schedule(static, lump) nowait
-         for (int i = 0; i < n; i++){
-            T_loc.diag[i_loc] = T.diag[i];
-            int i_nnz = 0;
-            for (int jj = T.start[i]; jj < T.start[i+1]; jj++){
-               if (ts->input.mat_storage_type == MATRIX_STORAGE_CSC){
-                  T_loc.i[jj_loc] = T.i[jj];
-               }
-               else {
-                  T_loc.j[jj_loc] = T.j[jj];
-               }
-               T_loc.data[jj_loc] = T.data[jj];
-               jj_loc++;
-               i_nnz++;
-            }
-            T_loc.start[i_loc+1] = T_loc.start[i_loc] + i_nnz;
-            i_loc++;
-         }
+         //T_loc.diag = (double *)calloc(n_loc, sizeof(double));
+         //T_loc.start = (int *)calloc(n_loc+1, sizeof(int));
+         //T_loc.data = (double *)calloc(nnz_loc, sizeof(double));
+         //if (ts->input.mat_storage_type == MATRIX_STORAGE_CSC){
+         //   T_loc.i = (int *)calloc(nnz_loc, sizeof(int));
+         //}
+         //else {
+         //   T_loc.j = (int *)calloc(nnz_loc, sizeof(int));
+         //}
+         //i_loc = 0, jj_loc = 0;
+         //#pragma omp for schedule(static, lump) nowait
+         //for (int i = 0; i < n; i++){
+         //   T_loc.diag[i_loc] = T.diag[i];
+         //   int i_nnz = 0;
+         //   for (int jj = T.start[i]; jj < T.start[i+1]; jj++){
+         //      if (ts->input.mat_storage_type == MATRIX_STORAGE_CSC){
+         //         T_loc.i[jj_loc] = T.i[jj];
+         //      }
+         //      else {
+         //         T_loc.j[jj_loc] = T.j[jj];
+         //      }
+         //      T_loc.data[jj_loc] = T.data[jj];
+         //      jj_loc++;
+         //      i_nnz++;
+         //   }
+         //   T_loc.start[i_loc+1] = T_loc.start[i_loc] + i_nnz;
+         //   i_loc++;
+         //}
       }
 
       /* compute row counts (number of non-zeros per row) and other data.
@@ -565,47 +565,6 @@ void TriSolve_Async(TriSolveData *ts,
           *
           **********************/
          else {
-            //jj_loc = 0;
-            //for (i_loc = 0; i_loc < n_loc; i_loc++){ /* loop over rows */
-            //   int i = my_rows[i_loc];
-            //   int jj_start = T.start[i];
-            //   int jj_end = T.start[i+1];
-            //   int jj_diff = jj_end - jj_start;
-            //   int row_count_i = jj_diff;
-            //   while (row_count_i > 0){ /* loop until x[i] has been completed */
-            //      int jj_loc_temp = jj_loc;
-            //      for (int jj = jj_start; jj < jj_end; jj++){
-            //         int this_nz_done = nz_done_flags_loc[jj_loc_temp];
-            //         if (this_nz_done == 0){ /* has this non-zero been used? */
-            //            double xj;
-            //            int get_flag = qGet(&Q, jj, &xj);
-            //            /* if x[j] is available, update x[i] and other data */
-            //            if (get_flag == 1){
-            //               x_loc[i_loc] -= T_loc.data[jj_loc_temp] * xj;
-            //               row_count_i--;
-            //               nz_done_flags_loc[jj_loc_temp] = 1;
-            //               num_qGets++;
-            //            }
-            //         }
-            //         jj_loc_temp++;
-            //      }
-            //   }
-            //   x_loc[i_loc] /= T_loc.diag[i_loc];
-            //   double xi = x_loc[i_loc];
-            //   int num_puts_i = put_targets[i_loc].size();
-            //   for (int j = 0; j < num_puts_i; j++){
-            //      int put_target = put_targets[i_loc][j];
-            //      qPut(&Q, put_target, xi);
-            //      num_qPuts++;
-            //   }
-
-            //   jj_loc += jj_diff;
-            //}
-            //for (jj_loc = 0; jj_loc < nnz_loc; jj_loc++){
-            //   nz_done_flags_loc[jj_loc] = 0;
-            //}
-            //#pragma omp barrier
-
             /*****************
              *   MsgQ wtime
              *****************/
@@ -721,7 +680,7 @@ void TriSolve_Async(TriSolveData *ts,
                            int get_flag = 1;
                            /* if x[j] is available, update x[i] and other data */
                            if (get_flag == 1){
-                              x_loc[i_loc] -= T_loc.data[jj_loc_temp] * xj;
+                              x_loc[i_loc] -= T.data[jj] * xj;
                               row_count_i--;
                               nz_done_flags_loc[jj_loc_temp] = 1;
                               num_qGets++;
@@ -731,7 +690,7 @@ void TriSolve_Async(TriSolveData *ts,
                         jj_loc_temp++;
                      }
                   }
-                  x_loc[i_loc] /= T_loc.diag[i_loc];
+                  x_loc[i_loc] /= T.diag[i];
                   double xi = x_loc[i_loc];
                   int num_puts_i = put_targets[i_loc].size();
                   for (int j = 0; j < num_puts_i; j++){
@@ -807,7 +766,7 @@ void TriSolve_Async(TriSolveData *ts,
                            int get_flag = 1;
                            /* if x[j] is available, update x[i] and other data */
                            if (get_flag == 1){
-                              x_loc[i_loc] -= T_loc.data[jj_loc_temp] * xj;
+                              x_loc[i_loc] -= T.data[jj] * xj;
                               row_count_i--;
                               nz_done_flags_loc[jj_loc_temp] = 1;
                               num_qGets++;
@@ -817,7 +776,7 @@ void TriSolve_Async(TriSolveData *ts,
                         jj_loc_temp++;
                      }
                   }
-                  x_loc[i_loc] /= T_loc.diag[i_loc];
+                  x_loc[i_loc] /= T.diag[i];
                   double xi = x_loc[i_loc];
                   int num_puts_i = put_targets[i_loc].size();
                   for (int j = 0; j < num_puts_i; j++){
@@ -890,7 +849,7 @@ void TriSolve_Async(TriSolveData *ts,
                            int get_flag = qGet(&Q, jj, &xj);
                            /* if x[j] is available, update x[i] and other data */
                            if (get_flag == 1){
-                              x_loc[i_loc] -= T_loc.data[jj_loc_temp] * xj;
+                              x_loc[i_loc] -= T.data[jj] * xj;
                               row_count_i--;
                               nz_done_flags_loc[jj_loc_temp] = 1;
                               num_qGets++;
@@ -899,7 +858,7 @@ void TriSolve_Async(TriSolveData *ts,
                         jj_loc_temp++;
                      }
                   }
-                  x_loc[i_loc] /= T_loc.diag[i_loc];
+                  x_loc[i_loc] /= T.diag[i];
                   double xi = x_loc[i_loc];
                   int num_puts_i = put_targets[i_loc].size();
                   for (int j = 0; j < num_puts_i; j++){
@@ -1306,6 +1265,7 @@ void TriSolve_Async(TriSolveData *ts,
                         }
                      }
                      x[i] /= T.diag[i];
+                     #pragma omp atomic write
                      row_done_flags[i] = 1;//row_done_flags[i].c = 1;
 
                      jj_loc += jj_diff;
@@ -1339,6 +1299,9 @@ void TriSolve_Async(TriSolveData *ts,
             ts->output.comp_wtime_vec[tid] = comp_wtime;
          }
 
+         ts->output.num_qGets_vec[tid] = num_qGets;
+         ts->output.num_qPuts_vec[tid] = num_qPuts;
+
          PrintDummy(dummy);
       }
 
@@ -1348,14 +1311,14 @@ void TriSolve_Async(TriSolveData *ts,
       else {
          free(my_rows);
          free(x_loc);
-         free(T_loc.diag);
-         free(T_loc.data);
-         free(T_loc.start);
+         //free(T_loc.diag);
+         //free(T_loc.data);
+         //free(T_loc.start);
          if (ts->input.mat_storage_type == MATRIX_STORAGE_CSC){
-            free(T_loc.i);
+            //free(T_loc.i);
          }
          else {
-            free(T_loc.j);
+            //free(T_loc.j);
             free(nz_done_flags_loc);
          }
       }

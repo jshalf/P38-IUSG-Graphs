@@ -176,6 +176,20 @@ int main (int argc, char *argv[])
       //}
    }
 
+   //int lump = 1;
+   //#pragma omp parallel
+   //{
+   //   double dummy = 0.0;
+   //   #pragma omp for schedule(static, lump) nowait
+   //   for (int i = 0; i < n; i++){
+   //      dummy += A.diag[i];
+   //      for (int jj = A.start[i]; jj < A.start[i+1]; jj++){
+   //         dummy += A.j[jj] + A.data[jj];
+   //      }
+   //   }
+   //   PrintDummy(dummy);
+   //}
+
    for (int run = 1; run <= num_runs; run++){
       for (int t = 0; t < solver.input.num_threads; t++){
          solver.output.solve_wtime_vec[t] = 0.0;

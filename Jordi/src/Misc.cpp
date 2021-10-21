@@ -1,4 +1,6 @@
 #include "Misc.hpp"
+#include <sys/stat.h>
+#include <sys/types.h>
 
 using namespace std;
 
@@ -334,11 +336,12 @@ uint64_t rdtsc(){
 
 void PrintDummy(double dummy)
 {
+   mkdir("dummy_files", 0777);
    int tid = omp_get_thread_num();
    char dummy_filename[100];
-   sprintf(dummy_filename, "dummy_%d_%jd.txt", tid, (intmax_t)time(NULL));
+   sprintf(dummy_filename, "dummy_files/dummy_%d_%jd.txt", tid, (intmax_t)time(NULL));
    FILE *dummy_file = fopen(dummy_filename, "w");
    fprintf(dummy_file, "%e\n", dummy);
    fclose(dummy_file);
-   remove(dummy_filename);
+   //remove(dummy_filename);
 }

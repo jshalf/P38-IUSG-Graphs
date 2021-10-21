@@ -81,6 +81,7 @@ typedef struct{
    int MsgQ_noop_flag;
    int symm_flag;
    int setup_type;
+   int reduce_flag;
 }InputData;
 
 /* Output data */
