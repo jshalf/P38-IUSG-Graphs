@@ -48,10 +48,10 @@ void SparseTriSolver::Solve(std::vector<double> b_input,
    int num_threads = num_procs;
 
    wtime_start = omp_get_wtime();
-   //if (num_threads == 1){
-   //   SequentialSolve();
-   //}
-   //else {
+   if (num_threads == 1){
+      SequentialSolve();
+   }
+   else {
 #ifdef USE_STDTHREAD
       thread_info.th.resize(num_threads);
       vector<TriSolveParArg> arg_vec(num_threads);
@@ -80,7 +80,7 @@ void SparseTriSolver::Solve(std::vector<double> b_input,
       arg.x = x_ptr;
       ParallelSolveFunc(&arg);
 #endif
-   //}
+   }
 }
 
 void SparseTriSolver::SequentialSolve(void)
@@ -410,15 +410,6 @@ void AsyncTriSolver::ParallelSolveFunc(TriSolveParArg *arg)
 
 void AsyncTriSolver::ParallelSolveFunc_MsgQ(TriSolveParArg *arg)
 {
-   int num_rows = A->GetNumRows();
-   vector<int> start = A->GetIndexStarts();
-   vector<int> row_idx = A->GetRowIndices();
-   vector<int> col_idx = A->GetColIndices();
-   vector<double> mat_values = A->GetValues();
-   vector<double> diag = A->GetDiagValues();
-   SparseMatrixStorageType spmat_store_type = A->GetStorageType();
-   vector<unsigned int> row_to_proc_map = para_info->Part()->GetIndexToProcMap();
-
    std::vector<double>& b = *(arg->b);
    std::vector<double>& x = *(arg->x);
 
@@ -439,6 +430,15 @@ void AsyncTriSolver::ParallelSolveFunc_MsgQ(TriSolveParArg *arg)
    {
       int tid = omp_get_thread_num();
 #endif
+      int num_rows = A->GetNumRows();
+      vector<int> start = A->GetIndexStarts();
+      vector<int> row_idx = A->GetRowIndices();
+      vector<int> col_idx = A->GetColIndices();
+      vector<double> mat_values = A->GetValues();
+      vector<double> diag = A->GetDiagValues();
+      SparseMatrixStorageType spmat_store_type = A->GetStorageType();
+      vector<unsigned int> row_to_proc_map = para_info->Part()->GetIndexToProcMap();
+
 
       double solve_start, solve_stop;
       int num_relax = 0, num_iters = 0;

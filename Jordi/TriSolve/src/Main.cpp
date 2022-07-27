@@ -353,7 +353,7 @@ int main (int argc, char *argv[])
       if (verbose_output){
          printf("Solve forward-error L2-norm = %e\n"
                 "Solve wall-clock time = %e\n"
-                "Overall solve wtime = %e\n"
+                //"Overall solve wtime = %e\n"
                 "Setup wall-clock time = %e\n"
                 "Sequential solver wall-clock time = %e\n"
                 "Mean relaxations = %f\n"
@@ -367,7 +367,7 @@ int main (int argc, char *argv[])
                 "Num qGets = %d\n",
                 error_x,
                 ts.output.solve_wtime,
-                overall_solve_wtime,
+                //overall_solve_wtime,
                 ts.output.setup_wtime,
                 seq_wtime,
                 (double)num_relax_sum/(double)ts.input.num_threads,
