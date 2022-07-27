@@ -16,24 +16,12 @@
 #define MATRIX_STORAGE_COO 2
 #define MATRIX_STORAGE_DENSE 3
 
-#define MATRIX_STORAGE_CSR 0
-#define MATRIX_STORAGE_CSC 1
-#define MATRIX_STORAGE_COO 2
-#define MATRIX_STORAGE_DENSE 3
-
-/* types of solvers used in the TriSolve benchmark */
-#define TRISOLVE_ASYNC 0
-#define TRISOLVE_LEVEL_SCHEDULED 1
-#define TRISOLVE_ASYNC_LEVEL_SCHEDULED 2
-
 #define LEVEL_SETS_SEQ_SETUP 0
 #define LEVEL_SETS_ASYNC_SETUP 1
 
 /* types of solvers used in the ILU benchmark */
 #define ILU_ASYNC 0
 #define ILU_LEVEL_SCHEDULED 1
-
-#define CACHE_LINE_SIZE 64
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -48,6 +36,13 @@
 #include <inttypes.h>
 #include <numeric>
 #include <smmintrin.h>
+#include <pthread.h>
+#include <unordered_map>
+#include <atomic>
+#include <functional>
+#include <thread>
+#include <mutex>
+//#include <barrier>
 
 using namespace std;
 
@@ -71,18 +66,22 @@ typedef struct{
    int MsgQ_flag; /* Are we using message queues instead of atomics? */
    int block_size;
    int hybrid_async_flag;
-   int mat_storage_type;
-   int coo_flag;
    int fine_grained_flag;
    int comp_wtime_flag;
    int MsgQ_wtime_flag;
    int MsgQ_cycles_flag;
    int comp_noop_flag;
    int MsgQ_noop_flag;
-   int symm_flag;
    int setup_type;
    int reduce_flag;
+   int print_traces_flag;
 }InputData;
+
+typedef struct{
+   double wtime;
+   int num_spins;
+   int num_atomics;
+}RowOutputData;
 
 /* Output data */
 typedef struct{
@@ -100,6 +99,8 @@ typedef struct{
    int *num_relax; /* number of relaxations */
    int *num_qPuts_vec;
    int *num_qGets_vec;
+   double *row_wtime;
+   RowOutputData *row_output;
 }OutputData;
 
 /* Struct used by MatVecT benchmark */
@@ -115,29 +116,30 @@ typedef struct{
    OutputData output;
 }SolverData;
 
-/* Level set data used in level scheduling algorithms */
-typedef struct{
-   int *perm; /* row ordering (rows are ordered by level)*/
-   vector<int> level_size; /* number of rows in each level */
-   vector<int> level_start; /* starting point in ``perm'' for each level */
-   int num_levels; /* number of level sets */
-}LevelSetData;
+///* Level set data used in level scheduling algorithms */
+//typedef struct{
+//   vector<int> order; /* row ordering (rows are ordered by level)*/
+//   vector<int> level_size; /* number of rows in each level */
+//   vector<int> level_start; /* starting point in ``perm'' for each level */
+//   int num_levels; /* number of level sets */
+//}LevelSetData;
 
-/* Struct used by TriSolve benchmark */
-typedef struct{
-   InputData input;
-   OutputData output;
-   LevelSetData L_lvl_set; /* level set data for lower triangular part */
-   LevelSetData U_lvl_set; /* level set data for upper triangular part */
-}TriSolveData;
+///* Struct used by TriSolve benchmark */
+//typedef struct{
+//   InputData input;
+//   OutputData output;
+//   LevelSetData L_lvl_set; /* level set data for lower triangular part */
+//   LevelSetData U_lvl_set; /* level set data for upper triangular part */
+//   PthreadData pt;
+//}TriSolveData;
 
-/* Struct used by ILU benchmark */
-typedef struct{
-   InputData input;
-   OutputData output;
-   LevelSetData L_lvl_set; /* level set data for lower triangular part */
-   LevelSetData U_lvl_set; /* level set data for upper triangular part */
-}ILUData;
+///* Struct used by ILU benchmark */
+//typedef struct{
+//   InputData input;
+//   OutputData output;
+//   LevelSetData L_lvl_set; /* level set data for lower triangular part */
+//   LevelSetData U_lvl_set; /* level set data for upper triangular part */
+//}ILUData;
 
 /* Struct used by Histogram benchmark */
 typedef struct{
@@ -145,5 +147,13 @@ typedef struct{
    OutputData output;
    int *Tally_expand;
 }HistogramData;
+
+/* Struct used by Histogram benchmark */
+typedef struct{
+   vector<int> phase;
+   vector<int> source;
+   vector<int> dest;
+   vector<size_t> msg_size;
+}TraceData;
 
 #endif

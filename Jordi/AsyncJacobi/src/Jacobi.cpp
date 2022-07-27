@@ -51,6 +51,8 @@ void Jacobi(SolverData *solver,
       }
    }
 
+   int *row_to_tid = (int *)calloc(n, sizeof(int));
+
    double *x_ghost;
    Queue Q, Q_comm;
    /* set up message queues */
@@ -97,8 +99,14 @@ void Jacobi(SolverData *solver,
       double *r_loc, *x_loc, *z_loc;
       int *my_rows;
       Matrix A_loc;
+      TraceData trace_loc;
 
       int tid = omp_get_thread_num();
+
+      #pragma omp for schedule(static, lump)
+      for (int i = 0; i < n; i++){
+         row_to_tid[i] = tid;
+      }
 
       n_loc = 0, nnz_loc = 0;
       #pragma omp for schedule(static, lump) nowait
@@ -159,11 +167,11 @@ void Jacobi(SolverData *solver,
       solve_start = omp_get_wtime();   
 
 
-      /*************************
-       * 
-       *       SYNC JACOBI
-       *
-       *************************/
+/********************************************
+ * 
+ *               SYNC JACOBI
+ *
+ ********************************************/
       if (solver_type == SYNC_JACOBI){
          if (solver->input.mat_storage_type == MATRIX_STORAGE_CSC){
             for (int iter = 0; iter < num_iters; iter++){
@@ -179,15 +187,74 @@ void Jacobi(SolverData *solver,
             }
          }
          else {
-            /* iterate until num_iters (naive convergence detection) */
-            for (int iter = 0; iter < num_iters; iter++){
-               #pragma omp for schedule(static, lump)
-               for (int i = 0; i < n; i++){
-                  (*x)[i] = JacobiRelax_CSR(A, b, x, x_prev, i);
+            /***********************************
+             *
+             * SYMMETRIC Sync Jacobi MsgQ CSR
+             *
+             ***********************************/
+            if (solver->input.MsgQ_flag == 1){
+               if (solver->input.symm_flag == 1){
+                  for (int iter = 0; iter < num_iters; iter++){
+                     for (i_loc = 0; i_loc < n_loc; i_loc++){
+                        int i = my_rows[i_loc];
+                        double z = r_loc[i_loc];// / A.diag[i];
+                        x_loc[i_loc] += z;
+                        for (int jj = A.start[i]; jj < A.start[i+1]; jj++){
+                           int j = A.j[jj];
+                           double y = A.data[jj] * z;
+                           if (i == j){
+                              r_loc[i_loc] -= y;
+                           }
+                           else if (tid == row_to_tid[j]){
+                              // TODO: map global rows to local
+                           }
+                           else {
+                              if (solver->input.print_traces_flag == 1){
+                                 trace_loc.phase.push_back(iter);
+                                 trace_loc.source.push_back(tid);
+                                 trace_loc.dest.push_back(row_to_tid[j]);
+                                 trace_loc.msg_size.push_back(sizeof(int));
+                                 trace_loc.data.push_back((int)y);
+                              }
+                              qPut(&Q, j, y);
+                              num_qPuts++;
+                           }
+                        }
+                     }
+
+                     int nnz_count = nnz_loc - n_loc;
+                     while(nnz_count != 0){
+                        for (i_loc = 0; i_loc < n_loc; i_loc++){
+                           int i = my_rows[i_loc];
+                           int get_flag;
+                           double z_accum = 0.0, z_recv = 0.0;
+                           int num_spins = 0;
+                           while (1){
+                              get_flag = qGet(&Q, i, &z_recv);
+                              if (!get_flag) break;
+                              z_accum += z_recv;
+                              num_qGets++;
+                              num_spins++;
+                              nnz_count--;
+                           }
+                           r_loc[i_loc] -= z_accum;
+                        }
+                     }
+                     #pragma omp barrier
+                  }
                }
-               #pragma omp for schedule(static, lump)
-               for (int i = 0; i < n; i++){
-                  x_prev[i] = (*x)[i];
+            }
+            else {
+               /* iterate until num_iters (naive convergence detection) */
+               for (int iter = 0; iter < num_iters; iter++){
+                  #pragma omp for schedule(static, lump)
+                  for (int i = 0; i < n; i++){
+                     (*x)[i] = JacobiRelax_CSR(A, b, x, x_prev, i);
+                  }
+                  #pragma omp for schedule(static, lump)
+                  for (int i = 0; i < n; i++){
+                     x_prev[i] = (*x)[i];
+                  }
                }
             }
          }
@@ -628,6 +695,12 @@ void Jacobi(SolverData *solver,
 
          PrintDummy(dummy);
 
+         if (solver->input.print_traces_flag == 1){
+            char traces_filename[100];
+            sprintf(traces_filename, "trace_files/traces_%d", tid);
+            PrintTraces(traces_filename, trace_loc);
+         }
+
          #pragma omp barrier
       }
 
@@ -675,6 +748,7 @@ void Jacobi(SolverData *solver,
    //}
 
    free(r);
+   free(row_to_tid);
 }
 
 /************************************************************

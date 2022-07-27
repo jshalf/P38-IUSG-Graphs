@@ -1,26 +1,37 @@
-#include "../../src/Main.hpp"
+#include "Main.hpp"
+#include "Matrix.hpp"
+#include "Parallel.hpp"
+#include "Misc.hpp"
+#include "MsgQ.hpp"
+#include "LevelSets.hpp"
 #include "TriSolve.hpp"
-#include "../../src/Matrix.hpp"
-#include "../../src/Misc.hpp"
-#include "../../src/MsgQ.hpp"
-
-#define TRISOLVE_ATOMIC_COUNTER 10
-
-using namespace std;
 
 int main (int argc, char *argv[])
 {
+   /* matrix defaults */
+   SparseMatrixInput spm_input;
+   spm_input.mat_type = MatrixType::lower;
+   spm_input.file_type = FileType::bin;
+   spm_input.num_rows = 100;
+   spm_input.num_cols = 100;
+   spm_input.grid_len.resize(1);
+   spm_input.grid_len[0] = 10;
+   spm_input.max_row_nnz = 5;
+   spm_input.store_type = SparseMatrixStorageType::CSR;
+   spm_input.store_diag_in_vec = true;
+
    /* set defaults */
+   TriSolverSolveOrder tri_solve_order = TriSolverSolveOrder::natural;
+   CommunicationType comm_type = CommunicationType::atomic;
+
    TriSolveData ts;
    ts.input.num_threads = 1;
    ts.input.atomic_flag = 1;
-   ts.input.coo_flag = 0;
    ts.input.async_flag = 1;
    ts.input.omp_for_flag = 1;
    ts.input.MsgQ_flag = 0;
    ts.input.block_size = 1;
    ts.input.fine_grained_flag = 0;
-   ts.input.mat_storage_type = MATRIX_STORAGE_CSR;
    ts.input.comp_wtime_flag = 0;
    ts.input.MsgQ_wtime_flag = 0;
    ts.input.MsgQ_cycles_flag = 0;
@@ -30,11 +41,8 @@ int main (int argc, char *argv[])
    ts.input.setup_type = LEVEL_SETS_SEQ_SETUP;
    int verbose_output = 0;
    int num_runs = 1;
-   int m = 10; 
-   int max_row_nnz = 3;
    int problem_type = PROBLEM_RANDOM;
    double start;
-   char mat_file_str[128];
 
    /* command line arguments */
    int arg_index = 0;
@@ -51,22 +59,22 @@ int main (int argc, char *argv[])
          else if (strcmp(argv[arg_index], "file") == 0){ /* read matrix from binary file */
             arg_index++;
             problem_type = PROBLEM_FILE;
-            strcpy(mat_file_str, argv[arg_index]);
+            strcpy(spm_input.file_name, argv[arg_index]);
          }
       }
       else if (strcmp(argv[arg_index], "-solver") == 0){ /* solver type */
          arg_index++;
          if (strcmp(argv[arg_index], "async") == 0){ /* asynchronous */
             ts.input.solver_type = TRISOLVE_ASYNC;
+            tri_solve_order = TriSolverSolveOrder::natural;
          }
          else if (strcmp(argv[arg_index], "lev_sched") == 0){ /* classical level-scheduled */
             ts.input.solver_type = TRISOLVE_LEVEL_SCHEDULED;
+            tri_solve_order = TriSolverSolveOrder::level_sched;
          }
          else if (strcmp(argv[arg_index], "async_lev_sched") == 0){ /* asynchronous using level-set info */
             ts.input.solver_type = TRISOLVE_ASYNC_LEVEL_SCHEDULED;
-         }
-         else if (strcmp(argv[arg_index], "counter") == 0){
-            ts.input.solver_type = TRISOLVE_ATOMIC_COUNTER;
+            tri_solve_order = TriSolverSolveOrder::level_sched;
          }
       }
       else if (strcmp(argv[arg_index], "-setup") == 0){ /* solver type */
@@ -80,7 +88,7 @@ int main (int argc, char *argv[])
       }
       else if (strcmp(argv[arg_index], "-n") == 0){ /* ``size'' of matrix. n*n rows for Laplace, n rows otherwise. */
          arg_index++;
-         m = atoi(argv[arg_index]);
+         spm_input.num_rows = atoi(argv[arg_index]);
       }
       else if (strcmp(argv[arg_index], "-num_threads") == 0){ /* number of threads */
          arg_index++;
@@ -98,10 +106,11 @@ int main (int argc, char *argv[])
       }
       else if (strcmp(argv[arg_index], "-MsgQ") == 0){ /* use message queues in async solvers */
          ts.input.MsgQ_flag = 1;
+         comm_type = CommunicationType::MsgQ;
       }
       else if (strcmp(argv[arg_index], "-mxr_nnz") == 0){ /* max number of non-zeros per row (only used for generating random amtrices) */
          arg_index++;
-         max_row_nnz = atoi(argv[arg_index]);
+         spm_input.max_row_nnz = atoi(argv[arg_index]);
       }
       else if (strcmp(argv[arg_index], "-sync") == 0){ /* make the async solver synchronous */
          ts.input.async_flag = 0;
@@ -109,10 +118,10 @@ int main (int argc, char *argv[])
       else if (strcmp(argv[arg_index], "-sp_store_type") == 0){ /* matrix storage type */
          arg_index++;
          if (strcmp(argv[arg_index], "csr") == 0){ /* compressed sparse row */
-            ts.input.mat_storage_type = MATRIX_STORAGE_CSR;
+            spm_input.store_type = SparseMatrixStorageType::CSR;
          }
          else if (strcmp(argv[arg_index], "csc") == 0){ /* compressed sparse column */
-            ts.input.mat_storage_type = MATRIX_STORAGE_CSC;
+            spm_input.store_type = SparseMatrixStorageType::CSC;
          }
       }
       else if (strcmp(argv[arg_index], "-fine_grained") == 0){ /* use fine grained solver */
@@ -169,29 +178,14 @@ int main (int argc, char *argv[])
       return 0;
    }
 
-   int num_rows;
-   
-   omp_set_num_threads(ts.input.num_threads);
-
-   int csc_flag = 0, coo_flag = 0;
-   if (ts.input.mat_storage_type == MATRIX_STORAGE_CSC){
-      csc_flag = 1;
-   }
-
-   int mat_type;
-   /* set up problem (TODO: add 5pt problem) */
-   Matrix A, L, U;
-   //Laplace_2D_5pt(ts.input, &A, m);
+   SparseMatrix L(spm_input);
 
    if (problem_type == PROBLEM_FILE){
-      mat_type = MATRIX_LOWER;
-      char L_mat_file_str[128];
-      sprintf(L_mat_file_str, "%s", mat_file_str);
-      freadBinaryMatrix(L_mat_file_str, &L, 0, csc_flag, coo_flag, mat_type);
+      L.ConstructMatrixFromFile();
    }
    else { 
-      RandomMatrix(ts.input, &L, m, max_row_nnz, MATRIX_LOWER, csc_flag, coo_flag);
-      //RandomMatrix(ts.input, &U, m, max_row_nnz, MATRIX_UPPER);
+      srand(0);
+      L.ConstructRandomMatrix();
    }
 
    //char L_outfile[128];
@@ -203,7 +197,7 @@ int main (int argc, char *argv[])
    //}
    //PrintMatrix(L, L_outfile, 1, csc_flag);
 
-   num_rows = L.n;
+   int num_rows = L.GetNumRows();
    
    ts.output.setup_wtime = 0.0;
    /* set up stuff for serial solver */
@@ -214,14 +208,18 @@ int main (int argc, char *argv[])
       //U_perm[i] = num_rows - (i+1);
    }
 
-   double *x = (double *)calloc(num_rows, sizeof(double));
-   double *x_exact = (double *)calloc(num_rows, sizeof(double));
-   double *e_x = (double *)calloc(num_rows, sizeof(double));
+   std::vector<double> x(num_rows), x_exact(num_rows), e_x(num_rows), b(num_rows);
 
-   double *b = (double *)calloc(num_rows, sizeof(double));
    srand(0);
    for (int i = 0; i < num_rows; i++){
       b[i] = 1.0;//RandDouble(-1.0, 1.0);
+   }
+
+   ts.output.row_output = (RowOutputData *)malloc(num_rows * sizeof(RowOutputData));
+   for (int i = 0; i < num_rows; i++){
+      ts.output.row_output[i].wtime = 0.0;
+      ts.output.row_output[i].num_spins = 0;
+      ts.output.row_output[i].num_atomics = 0;
    }
 
    ts.output.setup_wtime_vec = (double *)calloc(ts.input.num_threads, sizeof(double));
@@ -246,39 +244,60 @@ int main (int argc, char *argv[])
       ts.output.num_qPuts_vec = (int *)calloc(ts.input.num_threads, sizeof(int));
    }
 
+   LevelSchedTriSolver seq_tri_solver(L, 1);
+   LevelSchedTriSolver *lev_sched_tri_solver;
+   AsyncTriSolver *async_tri_solver;
+
+#if USE_DEVA
+#elif  USE_STDTHREADS
+#else
+   omp_set_num_threads(1);
+#endif
    /* serial solver first */
    double seq_start = omp_get_wtime();
-   TriSolve_Seq(&ts, L, L_perm, x_exact, b); 
+   seq_tri_solver.Setup(ts.output);
+   seq_tri_solver.Solve(b, x_exact, ts.output);
    double seq_wtime = omp_get_wtime() - seq_start;
    double init_setup_time = 0;
 
+
    int lvl_n_min = 0, lvl_n_max = 0, num_lvls = 0;
    double lvl_n_mean = 0.0;
-   if (ts.input.solver_type == TRISOLVE_LEVEL_SCHEDULED ||
-       ts.input.solver_type == TRISOLVE_ASYNC_LEVEL_SCHEDULED){
-      start = omp_get_wtime();
-      LevelSets(ts.input, L, &(ts.L_lvl_set), 1);
-      init_setup_time = omp_get_wtime() - start;
-      
-      lvl_n_min = *min_element(ts.L_lvl_set.level_size.begin(), ts.L_lvl_set.level_size.end());
-      lvl_n_max = *max_element(ts.L_lvl_set.level_size.begin(), ts.L_lvl_set.level_size.end());
-      lvl_n_mean = (double)accumulate(ts.L_lvl_set.level_size.begin(), ts.L_lvl_set.level_size.end(), (int)0) / ts.L_lvl_set.level_size.size(); 
-      num_lvls = ts.L_lvl_set.level_size.size();
+#if USE_DEVA
+   ts.input.num_threads = proc_rank_n;
+#elif  USE_STDTHREADS
+#else
+   omp_set_num_threads(ts.input.num_threads);
+#endif
+   if (ts.input.solver_type == TRISOLVE_LEVEL_SCHEDULED){
+      lev_sched_tri_solver = new LevelSchedTriSolver(L, ts.input.num_threads);
+      lev_sched_tri_solver->Setup(ts.output);
+
+      //lvl_n_min = *min_element(ts.L_lvl_set.level_size.begin(), ts.L_lvl_set.level_size.end());
+      //lvl_n_max = *max_element(ts.L_lvl_set.level_size.begin(), ts.L_lvl_set.level_size.end());
+      //lvl_n_mean = (double)accumulate(ts.L_lvl_set.level_size.begin(), ts.L_lvl_set.level_size.end(), (int)0) / ts.L_lvl_set.level_size.size(); 
+      //num_lvls = ts.L_lvl_set.level_size.size();
+   }
+   else {
+      async_tri_solver = new AsyncTriSolver(L, ts.input.num_threads);
+      async_tri_solver->Setup(ts.output, tri_solve_order, comm_type); 
    }
 
    for (int run = 1; run <= num_runs; run++){
       ts.output.setup_wtime = init_setup_time; 
+      if (ts.input.solver_type == TRISOLVE_LEVEL_SCHEDULED){
+         lev_sched_tri_solver->InitSolveData();
+      }
+      else {
+         async_tri_solver->InitSolveData();
+      }
 
       double start = omp_get_wtime();
-      /* parallel solver */
-      if (ts.input.solver_type == TRISOLVE_LEVEL_SCHEDULED){ /* level-scheduled solver */
-         TriSolve_LevelSchedule(&ts, ts.L_lvl_set, L, x, b);
+      if (ts.input.solver_type == TRISOLVE_LEVEL_SCHEDULED){
+         lev_sched_tri_solver->Solve(b, x, ts.output);
       }
-      else if (ts.input.solver_type == TRISOLVE_ATOMIC_COUNTER) {
-         TriSolve_AtomicCounter(&ts, L, x, b);
-      }
-      else { /* asynchronoues solver */
-         TriSolve_Async(&ts, L, x, b);
+      else {
+         async_tri_solver->Solve(b, x, ts.output);
       }
       double overall_solve_wtime = omp_get_wtime() - start;
 
@@ -293,7 +312,8 @@ int main (int argc, char *argv[])
          e_x[i] = x_exact[i] - x[i];
          //printf("%e %e\n", x_exact[i], x[i]);
       }
-      double error_x = sqrt(InnerProd(e_x, e_x, num_rows))/sqrt(InnerProd(x_exact, x_exact, num_rows));
+      double error_x = sqrt(InnerProd(e_x.data(), e_x.data(), num_rows)) /
+                       sqrt(InnerProd(x_exact.data(), x_exact.data(), num_rows));
       int num_relax_sum = SumInt(ts.output.num_relax, ts.input.num_threads);
       int num_iters_sum = SumInt(ts.output.num_iters, ts.input.num_threads);
 
@@ -385,10 +405,19 @@ int main (int argc, char *argv[])
       }
    }
 
-   free(x);
-   free(x_exact);
-   free(b);
-   free(e_x);
+
+   char row_output_file_str[512];
+   sprintf(row_output_file_str, "RowOutput_TriSolve_NumThreads%d.txt", ts.input.num_threads);
+   FILE *file = fopen(row_output_file_str, "w");
+   for (int i = 0; i < num_rows; i++){
+      fprintf(file, "%d %e %d %d\n", 
+              i, 
+              ts.output.row_output[i].wtime / num_runs,
+              (int)std::round((double)ts.output.row_output[i].num_spins / (double)num_runs),
+              (int)std::round((double)ts.output.row_output[i].num_atomics / (double)num_runs));
+   }
+   fclose(file);
+
    free(ts.output.setup_wtime_vec);
    free(ts.output.solve_wtime_vec);
    free(ts.output.num_relax);
@@ -409,6 +438,8 @@ int main (int argc, char *argv[])
       free(ts.output.num_qPuts_vec);
       free(ts.output.num_qGets_vec);
    }
+
+   free(ts.output.row_output);
 
    return 0;
 }

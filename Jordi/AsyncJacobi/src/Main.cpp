@@ -19,12 +19,12 @@ int main (int argc, char *argv[])
    solver.input.comp_noop_flag = 0;
    solver.input.MsgQ_noop_flag = 0;
    solver.input.symm_flag = 1;
+   solver.input.print_traces_flag = 0;
    int verbose_output = 0;
    int num_runs = 1;
    int m = 10; 
    double w = 1.0;
    int problem_type = PROBLEM_5PT_POISSON;
-   char mat_file_str[128];
 
    int arg_index = 0;
    int print_usage = 0;
@@ -37,7 +37,7 @@ int main (int argc, char *argv[])
          else if (strcmp(argv[arg_index], "file") == 0){ /* read matrix from binary file */
             arg_index++;
             problem_type = PROBLEM_FILE;
-            strcpy(mat_file_str, argv[arg_index]);
+            strcpy(solver.input.mat_file_str, argv[arg_index]);
          }
       }
       else if (strcmp(argv[arg_index], "-solver") == 0){ /* solver name */
@@ -105,6 +105,9 @@ int main (int argc, char *argv[])
       else if (strcmp(argv[arg_index], "-comp_noop") == 0){
          solver.input.comp_noop_flag = 1;
       }
+      else if (strcmp(argv[arg_index], "-print_traces") == 0){
+         solver.input.print_traces_flag = 1;
+      }
       arg_index++;
    }
 
@@ -127,10 +130,6 @@ int main (int argc, char *argv[])
       printf("\n");
       return 0;
    }
-
-   if (solver.input.solver_type == SYNC_JACOBI){
-      solver.input.MsgQ_flag = 0;
-   }
    
    omp_set_num_threads(solver.input.num_threads);
 
@@ -144,13 +143,14 @@ int main (int argc, char *argv[])
    Matrix A;
    if (problem_type == PROBLEM_FILE){
       char A_mat_file_str[128];
-      sprintf(A_mat_file_str, "%s", mat_file_str);
+      sprintf(A_mat_file_str, "%s", solver.input.mat_file_str);
       freadBinaryMatrix(A_mat_file_str, &A, include_diag, csc_flag, coo_flag, MATRIX_NONSYMMETRIC);
       //char A_outfile[128];
       //sprintf(A_outfile, "./matlab/A.txt");
       //PrintCOO(A, A_outfile, 0);
    }
    else {
+      sprintf(solver.input.mat_file_str, "%s", "5pt");
       Laplace_2D_5pt(solver.input, &A, m);
    }
 
@@ -196,7 +196,7 @@ int main (int argc, char *argv[])
       }
       srand(0);
       for (int i = 0; i < n; i++){
-         b[i] = RandDouble(-1.0, 1.0);
+         b[i] = i+1;//RandDouble(-1.0, 1.0);
          x[i] = 0;
       }
       /* run Jacobi solver */
