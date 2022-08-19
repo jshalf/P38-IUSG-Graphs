@@ -32,7 +32,8 @@ Partitioner::Partitioner(unsigned int num_parts,
    num_parts(num_parts),
    idx_start(part_input.idx_start),
    size_glob(part_input.size_glob),
-   idx_glob(part_input.idx_glob)
+   idx_glob(part_input.idx_glob),
+   lump(part_input.lump)
 {
 
 }
@@ -66,20 +67,40 @@ void Partitioner::ConstructPartition(void)
 {
    size.resize(num_parts, 0);
    idx.resize(num_parts, vector<unsigned int>());
-   for (int p = 0; p < num_parts; p++){
-      if (p < size_glob % num_parts){
-         size[p] = size_glob / num_parts + 1;
+
+   /* round-robin */
+   unsigned int p = 0;
+   unsigned int j = 0;
+   for (int ii = idx_start; ii < size_glob; ii++){
+      idx[p].push_back(idx_glob[ii]);
+
+      if (j == lump-1){
+         if (p == num_parts-1){
+            p = 0;
+         }
+         else{
+            p++;
+         }
+      }
+      if (j == lump-1){
+         j = 0;
       }
       else {
-         size[p] = size_glob / num_parts;
-      }
-      /* round-robin */
-      idx[p].resize(size[p], 0);
-      for (int i = 0; i < size[p]; i++){
-         int ii = idx_start + num_parts * i + p;
-         idx[p][i] = idx_glob[ii];
+         j++;
       }
    }
+
+   for (int p = 0; p < num_parts; p++){
+      size[p] = idx[p].size();
+   }
+
+   //for (int p = 0; p < num_parts; p++){
+   //   printf("%d:", p);
+   //   for (int j = 0; j < size[p]; j++){
+   //      printf(" %d", idx[p][j]);
+   //   }
+   //   printf("\n");
+   //}
 }
 
 void Partitioner::ConstructIndexToProcMap(void)
@@ -87,16 +108,31 @@ void Partitioner::ConstructIndexToProcMap(void)
    /* round-robin */
    idx_to_proc_map.resize(size_glob);
    unsigned int p = 0;
-   for (int ii = 0; ii < size_glob; ii++){
+   unsigned int j = 0;
+   for (int ii = idx_start; ii < size_glob; ii++){
       unsigned int i = idx_glob[ii];
       idx_to_proc_map[i] = p;
-      if (p == num_parts-1){
-         p = 0;
+
+      if (j == lump-1){
+         if (p == num_parts-1){
+            p = 0;
+         }
+         else {
+            p++;
+         }
+      }
+      if (j == lump-1){
+         j = 0;
       }
       else {
-         p++;
+         j++;
       }
    }
+
+   //for (int ii = 0; ii < size_glob; ii++){
+   //   unsigned int i = idx_glob[ii];
+   //   printf("%d\n", idx_to_proc_map[i]);
+   //}
 }
 
 void Partitioner::ConstructGlobToLocIndexMap(void)

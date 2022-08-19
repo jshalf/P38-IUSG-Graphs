@@ -89,6 +89,7 @@ int main (int argc, char *argv[])
       else if (strcmp(argv[arg_index], "-n") == 0){ /* ``size'' of matrix. n*n rows for Laplace, n rows otherwise. */
          arg_index++;
          spm_input.num_rows = atoi(argv[arg_index]);
+         spm_input.grid_len[0] = atoi(argv[arg_index]);
       }
       else if (strcmp(argv[arg_index], "-num_threads") == 0){ /* number of threads */
          arg_index++;
@@ -183,19 +184,17 @@ int main (int argc, char *argv[])
    if (problem_type == PROBLEM_FILE){
       L.ConstructMatrixFromFile();
    }
+   else if (problem_type == PROBLEM_5PT_POISSON){
+      L.ConstructLaplace2D5pt(); 
+   }
    else { 
       srand(0);
       L.ConstructRandomMatrix();
    }
 
    //char L_outfile[128];
-   //if (csc_flag == 1){
-   //   sprintf(L_outfile, "./matlab/L_csc.txt");
-   //}
-   //else {
-   //   sprintf(L_outfile, "./matlab/L_csr.txt");
-   //}
-   //PrintMatrix(L, L_outfile, 1, csc_flag);
+   //sprintf(L_outfile, "L.txt");
+   //L.PrintMatrix(L_outfile);
 
    int num_rows = L.GetNumRows();
    
@@ -244,7 +243,7 @@ int main (int argc, char *argv[])
       ts.output.num_qPuts_vec = (int *)calloc(ts.input.num_threads, sizeof(int));
    }
 
-   LevelSchedTriSolver seq_tri_solver(L, 1);
+   AsyncTriSolver seq_tri_solver(L, 1);
    LevelSchedTriSolver *lev_sched_tri_solver;
    AsyncTriSolver *async_tri_solver;
 

@@ -89,8 +89,19 @@ void SparseMatrix::ConstructLaplace2D5pt(void)
 
    num_rows = N;
    num_rows = N;
+   start_idx.resize(N+1);
+
    nnz = 5*nx*nx - 4*nx;
-   start_idx.resize(N);
+   switch(mat_type){
+      case MatrixType::lower:
+         nnz = (nnz - nx*nx) / 2;
+         break;
+      case MatrixType::upper:
+         nnz = (nnz - nx*nx) / 2;
+         break;
+      default:
+         ;
+   }
 
    switch(store_type){
       case SparseMatrixStorageType::COO:
@@ -118,33 +129,91 @@ void SparseMatrix::ConstructLaplace2D5pt(void)
    int k = 0;
    start_idx[0] = 0;
    for(int i = 0; i < N; i++){
-      diag[i] = 4.0;
+      if (store_diag_in_vec){
+         diag[i] = 4.0;
+      }
       col = i - nx;
       if (col >= 0){
-         data[k] = -1.0;
-         idx[k] = col;
-         k++;
+         bool insert_nnz = false;
+         if (mat_type == MatrixType::lower){
+            if (col < i) insert_nnz = true;
+         }
+         else if (mat_type == MatrixType::upper){
+            if (col > i) insert_nnz = true;
+         }
+         else {
+            insert_nnz = true;
+         }
+
+         if (insert_nnz){
+            data[k] = -1.0;
+            idx[k] = col;
+            k++;
+         }
       }
       if (i > block_start){
          col = i - 1;
-         data[k] = -1.0;
-         idx[k] = col;
+
+         bool insert_nnz = false;
+         if (mat_type == MatrixType::lower){
+            if (col < i) insert_nnz = true;
+         }
+         else if (mat_type == MatrixType::upper){
+            if (col > i) insert_nnz = true;
+         }
+         else {
+            insert_nnz = true;
+         }
+
+         if (insert_nnz){
+            data[k] = -1.0;
+            idx[k] = col;
+            k++;
+         }
+      }
+      if (!store_diag_in_vec){
+         data[k] = 4.0;
+         idx[k] = i;
          k++;
       }
-      data[k] = 4.0;
-      idx[k] = i;
-      k++;
       if (i < block_end){
          col = i + 1;
-         data[k] = -1.0;
-         idx[k] = col;
-         k++;
+
+         bool insert_nnz = false;
+         if (mat_type == MatrixType::lower){
+            if (col < i) insert_nnz = true;
+         }
+         else if (mat_type == MatrixType::upper){
+            if (col > i) insert_nnz = true;
+         }
+         else {
+            insert_nnz = true;
+         }
+
+         if (insert_nnz){
+            data[k] = -1.0;
+            idx[k] = col;
+            k++;
+         }
       }
       col = i + nx;
       if (col < N){
-         data[k] = -1.0;
-         idx[k] = col;
-         k++;
+         bool insert_nnz = false;
+         if (mat_type == MatrixType::lower){
+            if (col < i) insert_nnz = true;
+         }
+         else if (mat_type == MatrixType::upper){
+            if (col > i) insert_nnz = true;
+         }
+         else {
+            insert_nnz = true;
+         }
+
+         if (insert_nnz){   
+            data[k] = -1.0;
+            idx[k] = col;
+            k++;
+         }
       }
       start_idx[i+1] = k;
 
@@ -325,38 +394,6 @@ void SparseMatrix::ConstructRandomMatrix(void)
    }
 }
 
-/* print coordinate format of sparse matrix */
-void SparseMatrix::PrintMatrix(char *filename)
-{
-   FILE *file = fopen(filename, "w");
-   
-   //if (print_diag_flag == 1){
-   //   for (int i = 0; i < n; i++){
-   //      fprintf(file, "%d %d %.15e\n", i+1, i+1, diag[i]);
-   //   }
-   //}
-   if (store_type == SparseMatrixStorageType::CSC){
-      for (int j = 0; j < num_rows; j++){
-         for (int kk = start_idx[j]; kk < start_idx[j+1]; kk++){
-            int row = row_idx[kk]+1;
-            int col = j+1;
-            fprintf(file, "%d %d %.15e\n", row, col, data[kk]);
-         }
-      }
-   }
-   else {
-      for (int i = 0; i < num_rows; i++){
-         for (int kk = start_idx[i]; kk < start_idx[i+1]; kk++){
-            int row = i+1;
-            int col = col_idx[kk]+1;
-            fprintf(file, "%d %d %.15e\n", row, col, data[kk]);
-         }
-      }
-   }
-   
-   fclose(file);
-}
-
 /* read matrix from binary file. matrix entries must be ordered by increasing row index then increasing column index */
 void SparseMatrix::FreadBinaryMatrix(void)
 {
@@ -473,4 +510,36 @@ void SparseMatrix::FreadBinaryMatrix(void)
    }
 
    fclose(mat_file);
+}
+
+void SparseMatrix::PrintMatrix(char *filename)
+{
+   FILE *file = fopen(filename, "w");
+
+   //if (print_diag_flag == 1){
+   //   for (int i = 0; i < n; i++){
+   //      fprintf(file, "%d %d %.15e\n", i+1, i+1, diag[i]);
+   //   }
+   //}
+
+   if (store_type == SparseMatrixStorageType::CSC){
+      for (int j = 0; j < num_rows; j++){
+         for (int kk = start_idx[j]; kk < start_idx[j+1]; kk++){
+            int row = row_idx[kk]+1;
+            int col = j+1;
+            fprintf(file, "%d %d %.15e\n", row, col, data[kk]);
+         }
+      }
+   }
+   else {
+      for (int i = 0; i < num_rows; i++){
+         for (int kk = start_idx[i]; kk < start_idx[i+1]; kk++){
+            int row = i+1;
+            int col = col_idx[kk]+1;
+            fprintf(file, "%d %d %.15e\n", row, col, data[kk]);
+         }
+      }
+   }
+
+   fclose(file);
 }

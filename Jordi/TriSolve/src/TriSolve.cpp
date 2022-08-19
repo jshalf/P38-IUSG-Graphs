@@ -198,7 +198,6 @@ void LevelSchedTriSolver::ParallelSolveFunc(TriSolveParArg *arg)
 #ifdef USE_STDTHREAD
    int tid = arg->proc_id;
 #else
-   int lump = 1;
    #pragma omp parallel
    {
       int tid = omp_get_thread_num();
@@ -323,6 +322,7 @@ void AsyncTriSolver::Setup(OutputData &output_data_input,
    if (solve_order == TriSolverSolveOrder::level_sched){
       LevelSets(*A, &(level_set_info), 1);
       para_input.part_input.idx_glob = level_set_info.order;
+      //for (int i = 0; i < para_input.part_input.idx_glob.size(); i++) printf("%d %d\n",para_input.part_input.idx_glob[i],level_set_info.order[i]);
       idx_solve_order = level_set_info.order;
    }
    else {
@@ -334,6 +334,7 @@ void AsyncTriSolver::Setup(OutputData &output_data_input,
    /* partition parameters */
    para_input.part_input.idx_start = 0;
    para_input.part_input.size_glob = num_rows;
+   para_input.part_input.lump = 1;
    para_info = new ParallelInfo(num_procs, para_input);
    para_info->Part()->ConstructPartition();
    para_info->Part()->ConstructIndexToProcMap();
@@ -468,7 +469,6 @@ void AsyncTriSolver::ParallelSolveFunc_MsgQ(TriSolveParArg *arg)
       solve_start = omp_get_wtime();
 
       while (1){
-         //int nothing_flag = 1;
          /* solve equations that are ready to be solved */
          while (ready_to_solve.size()){
             unsigned int i_loc = ready_to_solve.front();
@@ -508,8 +508,6 @@ void AsyncTriSolver::ParallelSolveFunc_MsgQ(TriSolveParArg *arg)
             ready_to_solve.pop();
             num_unsolved--;
             num_iters++;
-
-            //nothing_flag = 0;
          }
 
          if (num_unsolved == 0) break;
@@ -542,8 +540,6 @@ void AsyncTriSolver::ParallelSolveFunc_MsgQ(TriSolveParArg *arg)
                   if (deps_counts[i_loc] == 0){
                      ready_to_solve.push(i_loc);
                   }
-
-                  //nothing_flag = 0;
                }
 #if USE_DEVA
 #else
@@ -554,11 +550,6 @@ void AsyncTriSolver::ParallelSolveFunc_MsgQ(TriSolveParArg *arg)
 //#if USE_DEVA
 //         deva::progress();
 //#endif
-
-         num_spins++;
-         //if (nothing_flag == 1){
-         //   nothing_spins++;
-         //}
 
          ///* receive messages */
          //while (1){
@@ -588,6 +579,7 @@ void AsyncTriSolver::ParallelSolveFunc_MsgQ(TriSolveParArg *arg)
          //   }
          //}
       }
+      
 
       solve_stop = omp_get_wtime();
 
@@ -601,6 +593,9 @@ void AsyncTriSolver::ParallelSolveFunc_MsgQ(TriSolveParArg *arg)
       output_data_ptr->solve_wtime_vec[tid] = solve_stop - solve_start;
       output_data_ptr->num_relax[tid] = num_relax;
       output_data_ptr->num_iters[tid] = num_iters;
+
+      #pragma omp barrier
+
 #ifdef USE_STDTHREAD
 #elif USE_DEVA
    });
@@ -641,11 +636,10 @@ void AsyncTriSolver::ParallelSolveFunc_Atomic(TriSolveParArg *arg)
       double solve_start, solve_stop;
       int num_relax = 0, num_iters = 0;
 
-      solve_start = omp_get_wtime();
-
       vector<unsigned int> my_rows = para_info->Part()->GetPartition()[tid];
       int n_loc = para_info->Part()->GetPartitionSize()[tid];
 
+      solve_start = omp_get_wtime();
       for (int i_loc = 0; i_loc < n_loc; i_loc++){ /* loop over rows */
          int num_spins = 0;
          int i = my_rows[i_loc];

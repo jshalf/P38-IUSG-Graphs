@@ -29,6 +29,7 @@ typedef struct {
    unsigned int idx_start;
    unsigned int size_glob;
    vector<unsigned int> idx_glob;
+   unsigned int lump = 1;
 } PartitionerInput;
 
 typedef struct {
@@ -90,6 +91,7 @@ protected:
    unsigned int num_parts;
    vector<unsigned int> idx_glob;
    unsigned int idx_start;
+   unsigned int lump = 1;
 
    /* computed by partitioner */
    vector<unsigned int> size;
