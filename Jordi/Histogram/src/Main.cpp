@@ -1,10 +1,22 @@
-#include "../../src/Main.hpp"
+#include "Main.hpp"
 #include "Histogram.hpp"
-#include "../../src/Matrix.hpp"
-#include "../../src/Misc.hpp"
+#include "Matrix.hpp"
+#include "Misc.hpp"
 
 int main (int argc, char *argv[])
 {
+   /* matrix defaults */
+   SparseMatrixInput spm_input;
+   spm_input.mat_type = MatrixType::lower;
+   spm_input.file_type = FileType::bin;
+   spm_input.num_rows = 100;
+   spm_input.num_cols = 100;
+   spm_input.grid_len.resize(1);
+   spm_input.grid_len[0] = 10;
+   spm_input.max_row_nnz = 5;
+   spm_input.store_type = SparseMatrixStorageType::CSR;
+   spm_input.store_diag_in_vec = true;
+
    HistogramData hist;
    hist.input.num_threads = 1;
    hist.input.atomic_flag = 1;
@@ -14,7 +26,6 @@ int main (int argc, char *argv[])
    hist.input.MsgQ_cycles_flag = 0;
    hist.input.comp_noop_flag = 0;
    hist.input.MsgQ_noop_flag = 0;
-   hist.input.mat_storage_type = MATRIX_STORAGE_CSR;
    hist.input.reduce_flag = 0;
    int verbose_output = 0;
    int num_runs = 1;
@@ -38,7 +49,7 @@ int main (int argc, char *argv[])
       }
       else if (strcmp(argv[arg_index], "-algo") == 0){ /* method */
          arg_index++;
-         if (strcmp(argv[arg_index], "atomic") == 0){ /* atomic method that treats Matrix as CSC */
+         if (strcmp(argv[arg_index], "async") == 0){ /* async method that uses atomics or msgQs */
             hist.input.reduce_flag = 0;
          }
          else if (strcmp(argv[arg_index], "reduce") == 0){ /* each thread uses a local vector which are summed at the end */
@@ -95,10 +106,9 @@ int main (int argc, char *argv[])
              "                          Must be in (i,j,val) format starting with (num rows, num cols, num nnz) on first line.\n");
       printf("-method <method_name>:    method for computing y=A^Tx.\n");
       printf("      atomic:             method that uses atomics.\n");
-      printf("      expand:             baseline method that does not require atomics.\n");
+      printf("      reduce:             baseline method that does not require atomics.\n");
       printf("-n <int value>:           size of test problem.  For 5pt, this is the length of the 2D grid, i.e., the matrix has n^2 rows.\n");
       printf("-num_threads <int value>: number of OpenMP threads.\n");
-      printf("-no_atomic:               turn off atomics.  Only meant for performance measurements and will not produce a correct result.\n");
       printf("-num_runs <int value>:    number of independent runs.  Used for data collection.\n");
       printf("-verb_out:                verbose output.\n");
       printf("-MsgQ:                    use message queues instead of atomics.\n");
@@ -112,25 +122,22 @@ int main (int argc, char *argv[])
    int include_diag = 1;
 
    /* set up problem */
-   Matrix A;
+   SparseMatrix A(spm_input);
+
    if (problem_type == PROBLEM_FILE){
-      char A_mat_file_str[128];
-      sprintf(A_mat_file_str, "%s", mat_file_str);
-      freadBinaryMatrix(A_mat_file_str, &A, include_diag, csc_flag, coo_flag, MATRIX_NONSYMMETRIC);
+      A.ConstructMatrixFromFile();
+   }
+   else if (problem_type == PROBLEM_5PT_POISSON){
+      A.ConstructLaplace2D5pt();
    }
    else {
-      Laplace_2D_5pt(hist.input, &A, m);
+      srand(0);
+      A.ConstructRandomMatrix();
    }
 
-   int *index;
-   if (csc_flag == 1){
-      index = A.i;
-   }
-   else {
-      index = A.j;
-   }
-   int n_index = A.nnz;
-   int n_tally = A.n;
+   vector<int> index = A.GetColIndices();
+   int n_index = A.GetNNZ();
+   int n_tally = A.GetNumRows();
 
    int *Tally_exact = (int *)calloc(n_tally, sizeof(int));
    int *Tally = (int *)calloc(n_tally, sizeof(int));
@@ -144,7 +151,8 @@ int main (int argc, char *argv[])
    hist.output.solve_wtime_vec = (double *)calloc(hist.input.num_threads, sizeof(double));
    hist.output.num_qGets_vec = (int *)calloc(hist.input.num_threads, sizeof(int));
    hist.output.num_qPuts_vec = (int *)calloc(hist.input.num_threads, sizeof(int));
-   
+  
+   /* output stats for msgQ stuff */ 
    if (hist.input.MsgQ_flag == 1){
       //if (hist.input.MsgQ_wtime_flag == 1){
          hist.output.MsgQ_put_wtime_vec = (double *)calloc(hist.input.num_threads, sizeof(double));
@@ -161,7 +169,9 @@ int main (int argc, char *argv[])
 
    srand(0);
 
-   Histogram_Seq(&hist, A.j, n_index, Tally_exact, n_tally);
+   /* do the sequential hist first,
+      we'll use this to check that the parallel hist is correct */
+   Histogram_Seq(&hist, index, n_index, Tally_exact, n_tally);
    //#pragma omp parallel
    //{
    //   double dummy = 0.0;
@@ -178,7 +188,7 @@ int main (int argc, char *argv[])
       }
 
       /* parallel Histogram */
-      Histogram_Par(&hist, A.j, n_index, Tally, n_tally);
+      Histogram_Par(&hist, index, n_index, Tally, n_tally);
 
       /* compute error */
       for (int i = 0; i < n_tally; i++){
@@ -192,6 +202,7 @@ int main (int argc, char *argv[])
       double solve_wtime_sum = accumulate(hist.output.solve_wtime_vec, hist.output.solve_wtime_vec+hist.input.num_threads, (double)0.0);
       double solve_wtime_mean = solve_wtime_sum / (double)hist.input.num_threads;
 
+      /* compute msgQ output stats */
       double MsgQ_put_wtime_sum = 0.0, MsgQ_put_wtime_mean = 0.0;
       double MsgQ_get_wtime_sum = 0.0, MsgQ_get_wtime_mean = 0.0;
       uint64_t MsgQ_put_cycles_sum = 0;

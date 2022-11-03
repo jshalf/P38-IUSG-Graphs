@@ -174,7 +174,7 @@ int main (int argc, char *argv[])
       printf("-sp_store_type <string>:  type of sparse matrix storage.\n");
       printf("      csr:          compressed sparse row.\n");
       printf("      csc:          compressed sparse column.\n");
-      printf("-fine_grained:            fine-grained version of asynchronous solver.\n");
+      //printf("-fine_grained:            fine-grained version of asynchronous solver.\n");
       printf("\n");
       return 0;
    }
@@ -223,6 +223,7 @@ int main (int argc, char *argv[])
 
    ts.output.setup_wtime_vec = (double *)calloc(ts.input.num_threads, sizeof(double));
    ts.output.solve_wtime_vec = (double *)calloc(ts.input.num_threads, sizeof(double));
+   ts.output.solve_cycles_vec = (uint64_t *)calloc(ts.input.num_threads, sizeof(uint64_t));
    ts.output.num_relax = (int *)calloc(ts.input.num_threads, sizeof(int));
    ts.output.num_iters = (int *)calloc(ts.input.num_threads, sizeof(int));
 
@@ -306,6 +307,11 @@ int main (int argc, char *argv[])
       double solve_wtime_sum = SumDouble(ts.output.solve_wtime_vec, ts.input.num_threads);
       ts.output.solve_wtime = solve_wtime_sum / (double)ts.input.num_threads;
 
+      uint64_t solve_cycles_sum = std::accumulate(ts.output.solve_cycles_vec,
+                                                  ts.output.solve_cycles_vec + ts.input.num_threads,
+                                                  (uint64_t)0, plus<uint64_t>());
+      double solve_cycles = (double)solve_cycles_sum / (double)ts.input.num_threads;
+
       /* compute the error between the serial and parallel solvers */
       for (int i = 0; i < num_rows; i++){
          e_x[i] = x_exact[i] - x[i];
@@ -352,6 +358,7 @@ int main (int argc, char *argv[])
       if (verbose_output){
          printf("Solve forward-error L2-norm = %e\n"
                 "Solve wall-clock time = %e\n"
+                "Solve clock cycles = %f\n"
                 //"Overall solve wtime = %e\n"
                 "Setup wall-clock time = %e\n"
                 "Sequential solver wall-clock time = %e\n"
@@ -366,6 +373,7 @@ int main (int argc, char *argv[])
                 "Num qGets = %d\n",
                 error_x,
                 ts.output.solve_wtime,
+                solve_cycles,
                 //overall_solve_wtime,
                 ts.output.setup_wtime,
                 seq_wtime,
@@ -383,24 +391,27 @@ int main (int argc, char *argv[])
                 num_lvls, lvl_n_min, lvl_n_max, lvl_n_mean);
       }
       else {
-         printf("%e %e %e %e %e %f %f %e %e %e %" PRIu64 " %" PRIu64 " %d %d ",
-                error_x,
-                ts.output.solve_wtime,
-                overall_solve_wtime,
-                ts.output.setup_wtime,
-                seq_wtime,
-                (double)num_relax_sum/(double)ts.input.num_threads,
-                (double)num_iters_sum/(double)ts.input.num_threads,
-                comp_wtime_mean,
-                MsgQ_put_wtime_mean,
-                MsgQ_get_wtime_mean,
-                MsgQ_put_cycles_sum,
-                MsgQ_get_cycles_sum,
-                num_qPuts_sum,
-                num_qGets_sum);
-         printf("%d %d %d %f ",
-                num_lvls, lvl_n_min, lvl_n_max, lvl_n_mean);
-         printf("\n");
+         //if (run == num_runs){
+            printf("%e %e %f %e %e %e %f %f %e %e %e %" PRIu64 " %" PRIu64 " %d %d ",
+                   error_x,
+                   ts.output.solve_wtime,
+                   solve_cycles,
+                   overall_solve_wtime,
+                   ts.output.setup_wtime,
+                   seq_wtime,
+                   (double)num_relax_sum/(double)ts.input.num_threads,
+                   (double)num_iters_sum/(double)ts.input.num_threads,
+                   comp_wtime_mean,
+                   MsgQ_put_wtime_mean,
+                   MsgQ_get_wtime_mean,
+                   MsgQ_put_cycles_sum,
+                   MsgQ_get_cycles_sum,
+                   num_qPuts_sum,
+                   num_qGets_sum);
+            printf("%d %d %d %f ",
+                   num_lvls, lvl_n_min, lvl_n_max, lvl_n_mean);
+            printf("\n");
+         //}
       }
    }
 

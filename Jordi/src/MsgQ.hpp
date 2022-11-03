@@ -7,6 +7,8 @@
 #define PROGRESS_QPUT 0
 #define PROGRESS_QGET 1
 
+#define MSGQ_CACHE_LINE_SIZE 64
+
 #ifdef USE_DEVA
 
 #include "deva_includes.hpp"
@@ -21,6 +23,11 @@ constexpr int proc_rank_n = rank_n / process_n;
 #include <omp.h>
 #endif
 
+template<typename T>
+struct alignas(MSGQ_CACHE_LINE_SIZE) MsgQCacheAlign {
+   T data;
+};
+
 // TODO: make a "queue" class that holds the message queue data and would use an std::queue underneath
 
 template<typename MessageData>
@@ -30,7 +37,7 @@ class MessageQueue {
 #ifdef USE_STDTHREAD
       std::mutex* lock;
 #else
-      std::vector<Cache<omp_lock_t>> lock;
+      std::vector<MsgQCacheAlign<omp_lock_t>> lock;
 #endif
       void qInitLock(int n);
       void qDestroyLock(void);

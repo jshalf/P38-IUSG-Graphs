@@ -4,6 +4,6 @@
 #include "../../src/Main.hpp"
 #include "../../src/Matrix.hpp"
 
-void Jacobi(SolverData *solver, Matrix A, double *b, double **x);
+void Jacobi(SolverData *solver, SparseMatrix A, double *b, double **x);
 
 #endif

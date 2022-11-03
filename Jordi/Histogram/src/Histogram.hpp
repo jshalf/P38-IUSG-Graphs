@@ -14,12 +14,12 @@ typedef struct {
 } HistogramProgressData;
 
 void Histogram_Seq(HistogramData *hist,
-                   int *index, int n_index,
+                   vector<int> index, int n_index,
                    int *Tally, int n_tally
                    );
 
 void Histogram_Par(HistogramData *hist,
-                   int *index, int n_index,
+                   vector<int> index, int n_index,
                    int *Tally, int n_tally
                    );
 

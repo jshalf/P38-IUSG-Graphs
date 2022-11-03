@@ -8,30 +8,33 @@
  * A is in compressed sparse row (Matrix) format.
  ***************************************************************/
 
-double JacobiRelax_CSR(Matrix A, double *b, double **x, double *x_prev, int i);
-double AsyncJacobiRelax_CSR(Matrix A, double *b, double **x, int i);
-double AsyncJacobiRelaxAtomic_CSR(Matrix A, double *b, double **x, int i);
+double JacobiRelax_CSR(SparseMatrix A, double *b, double **x, double *x_prev, int i);
+double AsyncJacobiRelax_CSR(SparseMatrix A, double *b, double **x, int i);
+double AsyncJacobiRelaxAtomic_CSR(SparseMatrix A, double *b, double **x, int i);
 
-double JacobiRelax_CSR_loc(Matrix A_loc, double *b_loc, double **x_loc, double *x_prev, int i, int i_loc);
-double AsyncJacobiRelax_CSR_loc(Matrix A_loc, double *b_loc, double **x, int i, int i_loc);
-double AsyncJacobiRelaxAtomic_CSR_loc(Matrix A_loc, double *b_loc, double **x, int i, int i_loc);
+double AsyncJacobiRelaxMsgQ_CSR(SparseMatrix A, double *b, double *x_ghost, MessageQueue<double> *Q, int i);
 
-double AsyncJacobiRelaxMsgQ_CSR(Matrix A, double *b, double *x_ghost, Queue *Q, int i);
-
-void JacobiRelaxAtomic_CSC(Matrix A, double **r, double z, int i);
-void JacobiRelax_CSC(Matrix A, double **r, double z, int i);
+void JacobiRelaxAtomic_CSC(SparseMatrix A, double **r, double z, int i);
+void JacobiRelax_CSC(SparseMatrix A, double **r, double z, int i);
 
 void Jacobi(SolverData *solver,
-            Matrix A, /* sparse matrix */
+            SparseMatrix A, /* sparse matrix */
             double *b, /* right-hand side */
             double **x /* solution (output) */
             )
 {
    int solver_type = solver->input.solver_type;
    int num_iters = solver->input.num_iters;
-   int n = A.n;
-   int nnz = A.nnz;
    int lump = 1;
+
+   int n = A.GetNumRows();
+   int nnz = A.GetNNZ();
+
+   vector<int> start = A.GetIndexStarts();
+   vector<int> col_idx = A.GetColIndices();
+   vector<int> row_idx = A.GetRowIndices();
+   vector<double> mat_values = A.GetValues();
+   vector<double> diag = A.GetDiagValues();
 
    /* for synchronous Jacobi, x from previous iteration must be saved */
    double *x_prev;
@@ -44,40 +47,34 @@ void Jacobi(SolverData *solver,
    //}
 
    double *r = (double *)calloc(n, sizeof(double));
-   if (solver->input.mat_storage_type == MATRIX_STORAGE_CSC){
+   if (A.GetStorageType() == SparseMatrixStorageType::CSC){
       #pragma omp parallel for
       for (int i = 0; i < n; i++){
          r[i] = b[i];
       }
    }
 
-   int *row_to_tid = (int *)calloc(n, sizeof(int));
-
    double *x_ghost;
-   Queue Q, Q_comm;
+   MessageQueue<double> *Q, *Q_comm;
    /* set up message queues */
    if (solver->input.MsgQ_flag == 1){
-      if (solver->input.mat_storage_type == MATRIX_STORAGE_CSC){
-         qAlloc(&Q, n);
-         qInitLock(&Q);
+      if (A.GetStorageType() == SparseMatrixStorageType::CSC){
+         Q = new MessageQueue<double>(n);
       }
       else {
-         if (solver->input.symm_flag == 1){
-            qAlloc(&Q, n);
-            qInitLock(&Q);
+         if (A.GetMatType() == MatrixType::symm){
+            Q = new MessageQueue<double>(n);
          }
          else {
             x_ghost = (double *)malloc(nnz * sizeof(double));
             for (int i = 0; i < n; i++){
-               for (int jj = A.start[i]; jj < A.start[i+1]; jj++){
-                  int ii = A.j[jj];
+               for (int jj = start[i]; jj < start[i+1]; jj++){
+                  int ii = col_idx[jj];
                   x_ghost[jj] = (*x)[ii];
                }
             }
-            qAlloc(&Q_comm, n);
-            qInitLock(&Q_comm);
-            qAlloc(&Q, nnz);
-            qInitLock(&Q);
+            Q = new MessageQueue<double>(nnz);
+            Q_comm = new MessageQueue<double>(n);
          }
       }
    }
@@ -98,21 +95,14 @@ void Jacobi(SolverData *solver,
       int i_loc, jj_loc, n_loc, nnz_loc;
       double *r_loc, *x_loc, *z_loc;
       int *my_rows;
-      Matrix A_loc;
-      TraceData trace_loc;
 
       int tid = omp_get_thread_num();
-
-      #pragma omp for schedule(static, lump)
-      for (int i = 0; i < n; i++){
-         row_to_tid[i] = tid;
-      }
 
       n_loc = 0, nnz_loc = 0;
       #pragma omp for schedule(static, lump) nowait
       for (int i = 0; i < n; i++){
          n_loc++;
-         for (int jj = A.start[i]; jj < A.start[i+1]; jj++){
+         for (int jj = start[i]; jj < start[i+1]; jj++){
             nnz_loc++;
          }
       }
@@ -133,7 +123,7 @@ void Jacobi(SolverData *solver,
       //A_loc.diag = (double *)calloc(n_loc, sizeof(double));
       //A_loc.start = (int *)calloc(n_loc+1, sizeof(int));
       //A_loc.data = (double *)calloc(nnz_loc, sizeof(double));
-      //if (solver->input.mat_storage_type == MATRIX_STORAGE_CSC){
+      //if (A.GetStorageType() == SparseMatrixStorageType::CSC){
       //   A_loc.i = (int *)calloc(nnz_loc, sizeof(int));
       //}
       //else {
@@ -142,16 +132,16 @@ void Jacobi(SolverData *solver,
       //i_loc = 0, jj_loc = 0;
       //#pragma omp for schedule(static, lump) nowait
       //for (int i = 0; i < n; i++){
-      //   A_loc.diag[i_loc] = A.diag[i];
+      //   A_loc.diag[i_loc] = diag[i];
       //   int i_nnz = 0;
-      //   for (int jj = A.start[i]; jj < A.start[i+1]; jj++){
-      //      if (solver->input.mat_storage_type == MATRIX_STORAGE_CSC){
-      //         A_loc.i[jj_loc] = A.i[jj];
+      //   for (int jj = start[i]; jj < start[i+1]; jj++){
+      //      if (A.GetStorageType() == SparseMatrixStorageType::CSC){
+      //         A_loc.i[jj_loc] = row_idx[jj];
       //      }
       //      else {
-      //         A_loc.j[jj_loc] = A.j[jj];
+      //         A_loc.j[jj_loc] = col_idx[jj];
       //      }
-      //      A_loc.data[jj_loc] = A.data[jj];
+      //      A_loc.data[jj_loc] = mat_values[jj];
       //      jj_loc++;
       //      i_nnz++;
       //   }
@@ -167,94 +157,35 @@ void Jacobi(SolverData *solver,
       solve_start = omp_get_wtime();   
 
 
-/********************************************
+/*************************
  * 
- *               SYNC JACOBI
+ *       SYNC JACOBI
  *
- ********************************************/
+ *************************/
       if (solver_type == SYNC_JACOBI){
-         if (solver->input.mat_storage_type == MATRIX_STORAGE_CSC){
+         if (A.GetStorageType() == SparseMatrixStorageType::CSC){
             for (int iter = 0; iter < num_iters; iter++){
                #pragma omp for
                for (int i = 0; i < n; i++){
                   double z;
                   #pragma omp atomic read
                   z = r[i];
-                  z /= A.diag[i];
+                  z /= diag[i];
                   (*x)[i] += z;
                   JacobiRelaxAtomic_CSC(A, &r, z, i);
                }
             }
          }
          else {
-            /***********************************
-             *
-             * SYMMETRIC Sync Jacobi MsgQ CSR
-             *
-             ***********************************/
-            if (solver->input.MsgQ_flag == 1){
-               if (solver->input.symm_flag == 1){
-                  for (int iter = 0; iter < num_iters; iter++){
-                     for (i_loc = 0; i_loc < n_loc; i_loc++){
-                        int i = my_rows[i_loc];
-                        double z = r_loc[i_loc];// / A.diag[i];
-                        x_loc[i_loc] += z;
-                        for (int jj = A.start[i]; jj < A.start[i+1]; jj++){
-                           int j = A.j[jj];
-                           double y = A.data[jj] * z;
-                           if (i == j){
-                              r_loc[i_loc] -= y;
-                           }
-                           else if (tid == row_to_tid[j]){
-                              // TODO: map global rows to local
-                           }
-                           else {
-                              if (solver->input.print_traces_flag == 1){
-                                 trace_loc.phase.push_back(iter);
-                                 trace_loc.source.push_back(tid);
-                                 trace_loc.dest.push_back(row_to_tid[j]);
-                                 trace_loc.msg_size.push_back(sizeof(int));
-                                 trace_loc.data.push_back((int)y);
-                              }
-                              qPut(&Q, j, y);
-                              num_qPuts++;
-                           }
-                        }
-                     }
-
-                     int nnz_count = nnz_loc - n_loc;
-                     while(nnz_count != 0){
-                        for (i_loc = 0; i_loc < n_loc; i_loc++){
-                           int i = my_rows[i_loc];
-                           int get_flag;
-                           double z_accum = 0.0, z_recv = 0.0;
-                           int num_spins = 0;
-                           while (1){
-                              get_flag = qGet(&Q, i, &z_recv);
-                              if (!get_flag) break;
-                              z_accum += z_recv;
-                              num_qGets++;
-                              num_spins++;
-                              nnz_count--;
-                           }
-                           r_loc[i_loc] -= z_accum;
-                        }
-                     }
-                     #pragma omp barrier
-                  }
+            /* iterate until num_iters (naive convergence detection) */
+            for (int iter = 0; iter < num_iters; iter++){
+               #pragma omp for schedule(static, lump)
+               for (int i = 0; i < n; i++){
+                  (*x)[i] = JacobiRelax_CSR(A, b, x, x_prev, i);
                }
-            }
-            else {
-               /* iterate until num_iters (naive convergence detection) */
-               for (int iter = 0; iter < num_iters; iter++){
-                  #pragma omp for schedule(static, lump)
-                  for (int i = 0; i < n; i++){
-                     (*x)[i] = JacobiRelax_CSR(A, b, x, x_prev, i);
-                  }
-                  #pragma omp for schedule(static, lump)
-                  for (int i = 0; i < n; i++){
-                     x_prev[i] = (*x)[i];
-                  }
+               #pragma omp for schedule(static, lump)
+               for (int i = 0; i < n; i++){
+                  x_prev[i] = (*x)[i];
                }
             }
          }
@@ -271,7 +202,7 @@ void Jacobi(SolverData *solver,
  *
  *****************************************************/
       else if (solver_type == ASYNC_JACOBI){
-         if (solver->input.mat_storage_type == MATRIX_STORAGE_CSC){
+         if (A.GetStorageType() == SparseMatrixStorageType::CSC){
             /*************************
              * 
              * Async Jacobi MsgQ CSC
@@ -282,16 +213,16 @@ void Jacobi(SolverData *solver,
                   #pragma omp for schedule(static, lump) nowait
                   for (int i = 0; i < n; i++){
                      double z;
-                     int get_flag = qGet(&Q, i, &z);
+                     int get_flag = Q->qGet(i, &z);
                      while (get_flag == 1){
                         r[i] -= z;
-                        get_flag = qGet(&Q, i, &z);
+                        get_flag = Q->qGet(i, &z);
                      }
                      z = r[i];
-                     z /= A.diag[i];
+                     z /= diag[i];
                      (*x)[i] += z;
-                     for (int jj = A.start[i]; jj < A.start[i+1]; jj++){
-                        qPut(&Q, A.i[jj], A.data[jj] * z);
+                     for (int jj = start[i]; jj < start[i+1]; jj++){
+                        Q->qPut(row_idx[jj], mat_values[jj] * z);
                      }
                   }
                }
@@ -319,7 +250,7 @@ void Jacobi(SolverData *solver,
                         double z;
                         #pragma omp atomic read
                         z = r[i];
-                        z /= A.diag[i];
+                        z /= diag[i];
                         (*x)[i] += z;
                         JacobiRelaxAtomic_CSC(A, &r, z, i);
                      }
@@ -331,7 +262,7 @@ void Jacobi(SolverData *solver,
                      for (int i = 0; i < n; i++){
                         double z;
                         z = r[i];
-                        z /= A.diag[i];
+                        z /= diag[i];
                         (*x)[i] += z;
                         JacobiRelax_CSC(A, &r, z, i);
                      }
@@ -356,7 +287,7 @@ void Jacobi(SolverData *solver,
              *
              ***********************************/
             if (solver->input.MsgQ_flag == 1){
-               if (solver->input.symm_flag == 1){
+               if (A.GetMatType() == MatrixType::symm){
                   /*****************
                    *   MsgQ wtime
                    *****************/
@@ -366,16 +297,16 @@ void Jacobi(SolverData *solver,
                      for (int iter = 0; iter < num_iters; iter++){
                         for (i_loc = 0; i_loc < n_loc; i_loc++){
                            int i = my_rows[i_loc];
-                           double z = r_loc[i_loc] / A.diag[i];
+                           double z = r_loc[i_loc] / diag[i];
                            x_loc[i_loc] += z;
-                           for (int jj = A.start[i]; jj < A.start[i+1]; jj++){
-                              int j = A.j[jj];
-                              double y = A.data[jj] * z;
+                           for (int jj = start[i]; jj < start[i+1]; jj++){
+                              int j = col_idx[jj];
+                              double y = mat_values[jj] * z;
                               if (i == j){
                                  r_loc[i_loc] -= y;
                               }
                               else {
-                                 qPut(&Q, j, y);
+                                 Q->qPut(j, y);
                                  num_qPuts++;
                               }
                            }
@@ -384,7 +315,7 @@ void Jacobi(SolverData *solver,
                            double z_accum = 0.0, z_recv = 0.0;
                            int num_spins = 0;
                            while (1){
-                              get_flag = qGet(&Q, i, &z_recv);
+                              get_flag = Q->qGet(i, &z_recv);
                               if (!get_flag) break;
                               z_accum += z_recv;
                               num_qGets++;
@@ -403,11 +334,11 @@ void Jacobi(SolverData *solver,
                      for (int iter = 0; iter < num_iters; iter++){
                         for (i_loc = 0; i_loc < n_loc; i_loc++){
                            int i = my_rows[i_loc];
-                           double z = r_loc[i_loc] / A.diag[i];
+                           double z = r_loc[i_loc] / diag[i];
                            x_loc[i_loc] += z;
-                           for (int jj = A.start[i]; jj < A.start[i+1]; jj++){
-                              int j = A.j[jj];
-                              double y = A.data[jj] * z;
+                           for (int jj = start[i]; jj < start[i+1]; jj++){
+                              int j = col_idx[jj];
+                              double y = mat_values[jj] * z;
                               if (i == j){
                                  r_loc[i_loc] -= y;
                               }
@@ -445,16 +376,16 @@ void Jacobi(SolverData *solver,
                      for (int iter = 0; iter < num_iters; iter++){
                         for (i_loc = 0; i_loc < n_loc; i_loc++){
                            int i = my_rows[i_loc];
-                           double z = r_loc[i_loc] / A.diag[i];
+                           double z = r_loc[i_loc] / diag[i];
                            x_loc[i_loc] += z;
-                           for (int jj = A.start[i]; jj < A.start[i+1]; jj++){
-                              int j = A.j[jj];
-                              double y = A.data[jj] * z;
+                           for (int jj = start[i]; jj < start[i+1]; jj++){
+                              int j = col_idx[jj];
+                              double y = mat_values[jj] * z;
                               if (i == j){
                                  r_loc[i_loc] -= y;
                               }
                               else {
-                                 qPut(&Q, j, y);
+                                 Q->qPut(j, y);
                                  num_qPuts++;
                               }
                            }
@@ -463,7 +394,7 @@ void Jacobi(SolverData *solver,
                            double z_accum = 0.0, z_recv = 0.0;
                            int num_spins = 0;
                            while (1){
-                              get_flag = qGet(&Q, i, &z_recv);
+                              get_flag = Q->qGet(i, &z_recv);
                               if (!get_flag) break;
                               z_accum += z_recv;
                               num_qGets++;
@@ -480,11 +411,11 @@ void Jacobi(SolverData *solver,
                      for (int iter = 0; iter < num_iters; iter++){
                         for (i_loc = 0; i_loc < n_loc; i_loc++){
                            int i = my_rows[i_loc];
-                           double z = r_loc[i_loc] / A.diag[i];
+                           double z = r_loc[i_loc] / diag[i];
                            x_loc[i_loc] += z;
-                           for (int jj = A.start[i]; jj < A.start[i+1]; jj++){
-                              int j = A.j[jj];
-                              double y = A.data[jj] * z;
+                           for (int jj = start[i]; jj < start[i+1]; jj++){
+                              int j = col_idx[jj];
+                              double y = mat_values[jj] * z;
                               if (i == j){
                                  r_loc[i_loc] -= y;
                               }
@@ -532,16 +463,16 @@ void Jacobi(SolverData *solver,
                      for (int iter = 0; iter < num_iters; iter++){
                         for (i_loc = 0; i_loc < n_loc; i_loc++){
                            int i = my_rows[i_loc];
-                           double z = r_loc[i_loc] / A.diag[i];
+                           double z = r_loc[i_loc] / diag[i];
                            x_loc[i_loc] += z; 
-                           for (int jj = A.start[i]; jj < A.start[i+1]; jj++){
-                              int j = A.j[jj];
-                              double y = A.data[jj] * z;
+                           for (int jj = start[i]; jj < start[i+1]; jj++){
+                              int j = col_idx[jj];
+                              double y = mat_values[jj] * z;
                               if (i == j){
                                  r_loc[i_loc] -= y;
                               }
                               else {
-                                 qPut(&Q, j, y);
+                                 Q->qPut(j, y);
                                  num_qPuts++;
                               }
                            }
@@ -550,7 +481,7 @@ void Jacobi(SolverData *solver,
                            double z_accum = 0.0, z_recv = 0.0;
                            int num_spins = 0;
                            while (1){
-                              get_flag = qGet(&Q, i, &z_recv);
+                              get_flag = Q->qGet(i, &z_recv);
                               if (!get_flag) break;
                               z_accum += z_recv;
                               num_qGets++;
@@ -585,9 +516,9 @@ void Jacobi(SolverData *solver,
                   vector<vector<int>> put_targets(n_loc);
                   #pragma omp for schedule(static, lump) nowait
                   for (int i = 0; i < n; i++){
-                     for (int jj = A.start[i]; jj < A.start[i+1]; jj++){
-                        int ii = A.j[jj];
-                        qPut(&Q_comm, ii, (double)jj);
+                     for (int jj = start[i]; jj < start[i+1]; jj++){
+                        int ii = col_idx[jj];
+                        Q_comm->qPut(ii, (double)jj);
                      }
                   }
                   /* iterate until num_iters (naive convergence detection) */
@@ -596,14 +527,14 @@ void Jacobi(SolverData *solver,
                      #pragma omp for schedule(static, lump) nowait
                      for (int i = 0; i < n; i++){
                         double target;
-                        if (qGet(&Q_comm, i, &target)){
+                        if (Q_comm->qGet(i, &target)){
                            put_targets[i_loc].push_back((int)target);
                         }
                         double xi = (*x)[i];
-                        xi += AsyncJacobiRelaxMsgQ_CSR(A, b, x_ghost, &Q, i); /* relaxation of element i of x */
+                        xi += AsyncJacobiRelaxMsgQ_CSR(A, b, x_ghost, Q, i); /* relaxation of element i of x */
                         /* send element i of x using put primitive */
                         for (int j = 0; j < put_targets[i_loc].size(); j++){
-                           qPut(&Q, put_targets[i_loc][j], xi);
+                           Q->qPut(put_targets[i_loc][j], xi);
                         }
                         (*x)[i] = xi;
                         i_loc++;
@@ -633,16 +564,16 @@ void Jacobi(SolverData *solver,
                      #pragma omp for schedule(static, lump) nowait
                      for (int i = 0; i < n; i++){
                         double res = b[i];
-                        for (int jj = A.start[i]; jj < A.start[i+1]; jj++){
-                           int ii = A.j[jj];
+                        for (int jj = start[i]; jj < start[i+1]; jj++){
+                           int ii = col_idx[jj];
                            double xii;
-                           /* atomically read element A.j[jj] of x */
+                           /* atomically read element col_idx[jj] of x */
                            #pragma omp atomic read
                            xii = (*x)[ii];
-                           res -= A.data[jj] * xii;
+                           res -= mat_values[jj] * xii;
                         }
                         #pragma omp atomic
-                        (*x)[i] += res / A.diag[i];
+                        (*x)[i] += res / diag[i];
                      }
                   }
                }
@@ -651,11 +582,11 @@ void Jacobi(SolverData *solver,
                      #pragma omp for schedule(static, lump) nowait
                      for (int i = 0; i < n; i++){
                         double res = b[i]; /* initialize residual */
-                        for (int jj = A.start[i]; jj < A.start[i+1]; jj++){ /* loop over non-zeros in this row */
-                           int ii = A.j[jj]; /* column index */
-                           res -= A.data[jj] * (*x)[ii]; /* decrement residual */
+                        for (int jj = start[i]; jj < start[i+1]; jj++){ /* loop over non-zeros in this row */
+                           int ii = col_idx[jj]; /* column index */
+                           res -= mat_values[jj] * (*x)[ii]; /* decrement residual */
                         }
-                        (*x)[i] += res / A.diag[i];
+                        (*x)[i] += res / diag[i];
                      }
                   }
                }
@@ -695,12 +626,6 @@ void Jacobi(SolverData *solver,
 
          PrintDummy(dummy);
 
-         if (solver->input.print_traces_flag == 1){
-            char traces_filename[100];
-            sprintf(traces_filename, "trace_files/traces_%d", tid);
-            PrintTraces(traces_filename, trace_loc);
-         }
-
          #pragma omp barrier
       }
 
@@ -708,8 +633,8 @@ void Jacobi(SolverData *solver,
       jj_loc = 0;
       #pragma omp for schedule(static, lump) nowait
        for (int i = 0; i < n; i++){
-          for (int jj = A.start[i]; jj < A.start[i+1]; jj++){
-             int ii = A.j[jj];
+          for (int jj = start[i]; jj < start[i+1]; jj++){
+             int ii = col_idx[jj];
              (*x)[ii] += x_prev_loc[jj_loc];
              jj_loc++;
           }
@@ -721,7 +646,7 @@ void Jacobi(SolverData *solver,
       //free(A_loc.diag);
       //free(A_loc.data);
       //free(A_loc.start);
-      //if (solver->input.mat_storage_type == MATRIX_STORAGE_CSC){
+      //if (A.GetStorageType() == SparseMatrixStorageType::CSC){
       //   free(A_loc.i);
       //}
       //else {
@@ -730,17 +655,17 @@ void Jacobi(SolverData *solver,
    }
 
    if (solver->input.MsgQ_flag == 1){
-      if (solver->input.mat_storage_type == MATRIX_STORAGE_CSR){
-         if (solver->input.symm_flag == 1){
-         }
-         else {
-            free(x_ghost);
-            qDestroyLock(&Q_comm);
-            qFree(&Q_comm);
-         }
-      }
-      qDestroyLock(&Q);
-      qFree(&Q);
+      //if (A.GetStorageType() == MATRIX_STORAGE_CSR){
+      //   if (A.GetMatType() == MatrixType::symm){
+      //   }
+      //   else {
+      //      free(x_ghost);
+      //      qDestroyLock(&Q_comm);
+      //      qFree(&Q_comm);
+      //   }
+      //}
+      //qDestroyLock(&Q);
+      //qFree(&Q);
    }
 
    //if (solver_type == SYNC_JACOBI){
@@ -748,121 +673,106 @@ void Jacobi(SolverData *solver,
    //}
 
    free(r);
-   free(row_to_tid);
 }
 
-/************************************************************
+/*****************************************************************************
  * relaxation routines for different Jacobi implementations
- * (See JacobiRelax() for detailed commensolver) 
- ************************************************************/ 
-double JacobiRelax_CSR(Matrix A, /* sparse matrix */
+ * (the comments in JacobiRelax_CSR() can be extended to all functions below) 
+ *****************************************************************************/ 
+double JacobiRelax_CSR(SparseMatrix A, /* sparse matrix */
                        double *b, /* right-hadn side */
                        double **x, /* current approximation to the solution (output) */
                        double *x_prev, /* approximation from previous iteration */
                        int i /* row to relax */
                        )
 {
+   vector<int> start = A.GetIndexStarts();
+   vector<int> col_idx = A.GetColIndices();
+   vector<double> mat_values = A.GetValues();
+   vector<double> diag = A.GetDiagValues();
+
    /* compute residual for row i */
    double res = b[i]; /* initialize residual */
-   for (int jj = A.start[i]; jj < A.start[i+1]; jj++){ /* loop over non-zeros in this row */
-      int ii = A.j[jj]; /* column index */
-      res -= A.data[jj] * x_prev[ii]; /* decrement residual */
+   for (int jj = start[i]; jj < start[i+1]; jj++){ /* loop over non-zeros in this row */
+      int ii = col_idx[jj]; /* column index */
+      res -= mat_values[jj] * x_prev[ii]; /* decrement residual */
    }
    /* return relaxation */
-   return (*x)[i] + res / A.diag[i];
+   return (*x)[i] + res / diag[i];
 }
 
-double AsyncJacobiRelaxAtomic_CSR(Matrix A, double *b, double **x, int i)
+double AsyncJacobiRelaxAtomic_CSR(SparseMatrix A, double *b, double **x, int i)
 {
+   vector<int> start = A.GetIndexStarts();
+   vector<int> col_idx = A.GetColIndices();
+   vector<double> mat_values = A.GetValues();
+   vector<double> diag = A.GetDiagValues();
+
    double res = b[i];
-   for (int jj = A.start[i]; jj < A.start[i+1]; jj++){
-      int ii = A.j[jj];
+   for (int jj = start[i]; jj < start[i+1]; jj++){
+      int ii = col_idx[jj];
       double xii;
-      /* atomically read element A.j[jj] of x */
+      /* atomically read element col_idx[jj] of x */
       //#pragma omp atomic read
       xii = (*x)[ii];
-      res -= A.data[jj] * xii;
+      res -= mat_values[jj] * xii;
    }
-   return (*x)[i] + res / A.diag[i];
+   return (*x)[i] + res / diag[i];
 }
 
-double AsyncJacobiRelax_CSR(Matrix A, double *b, double **x, int i)
+double AsyncJacobiRelax_CSR(SparseMatrix A, double *b, double **x, int i)
 {
+   vector<int> start = A.GetIndexStarts();
+   vector<int> col_idx = A.GetColIndices();
+   vector<double> mat_values = A.GetValues();
+   vector<double> diag = A.GetDiagValues();
+
    double res = b[i];
-   for (int jj = A.start[i]; jj < A.start[i+1]; jj++){
-      int ii = A.j[jj];
-      res -= A.data[jj] * (*x)[ii];
+   for (int jj = start[i]; jj < start[i+1]; jj++){
+      int ii = col_idx[jj];
+      res -= mat_values[jj] * (*x)[ii];
    }
-   return (*x)[i] + res / A.diag[i];
+   return (*x)[i] + res / diag[i];
 }
 
-double JacobiRelax_CSR_loc(Matrix A_loc, /* sparse matrix */
-                           double *b_loc, /* right-hadn side */
-                           double **x_loc, /* current approximation to the solution (output) */
-                           double *x_prev, /* approximation from previous iteration */
-                           int i, /* row to relax */
-                           int i_loc
-                           )
+double AsyncJacobiRelaxMsgQ_CSR(SparseMatrix A, double *b, double *x_ghost, MessageQueue<double> *Q, int i)
 {
-   /* compute residual for row i */
-   double res = b_loc[i_loc]; /* initialize residual */
-   for (int jj_loc = A_loc.start[i_loc]; jj_loc < A_loc.start[i_loc+1]; jj_loc++){ /* loop over non-zeros in this row */
-      int ii = A_loc.j[jj_loc]; /* column index */
-      res -= A_loc.data[jj_loc] * x_prev[ii]; /* decrement residual */
-   }
-   /* return relaxation */
-   return (*x_loc)[i_loc] + res / A_loc.diag[i_loc];
-}
+   vector<int> start = A.GetIndexStarts();
+   vector<int> col_idx = A.GetColIndices();
+   vector<double> mat_values = A.GetValues();
+   vector<double> diag = A.GetDiagValues();
 
-double AsyncJacobiRelaxAtomic_CSR_loc(Matrix A_loc, double *b_loc, double **x, int i, int i_loc)
-{
-   double res = b_loc[i_loc];
-   for (int jj_loc = A_loc.start[i_loc]; jj_loc < A_loc.start[i_loc+1]; jj_loc++){
-      int ii = A_loc.j[jj_loc];
-      double xii;
-      /* atomically read element A.j[jj] of x */
-      #pragma omp atomic read
-      xii = (*x)[ii];
-      res -= A_loc.data[jj_loc] * xii;
-   }
-   return (*x)[i] + res / A_loc.diag[i_loc];
-}
-
-double AsyncJacobiRelax_CSR_loc(Matrix A_loc, double *b_loc, double **x, int i, int i_loc)
-{
-   double res = b_loc[i_loc];
-   for (int jj_loc = A_loc.start[i_loc]; jj_loc < A_loc.start[i_loc+1]; jj_loc++){
-      int ii = A_loc.j[jj_loc];
-      res -= A_loc.data[jj_loc] * (*x)[ii];
-   }
-   return (*x)[i] + res / A_loc.diag[i_loc];
-}
-
-double AsyncJacobiRelaxMsgQ_CSR(Matrix A, double *b, double *x_ghost, Queue *Q, int i)
-{
    double res = b[i];
-   for (int jj = A.start[i]; jj < A.start[i+1]; jj++){
-      int ii = A.j[jj];
+   for (int jj = start[i]; jj < start[i+1]; jj++){
+      int ii = col_idx[jj];
       double xii;
-      qGet(Q, jj, &(x_ghost[jj])); /* get element A.j[jj] of x and save into x_ghost */
-      res -= A.data[jj] * x_ghost[jj];
+      Q->qGet(jj, &(x_ghost[jj])); /* get element col_idx[jj] of x and save into x_ghost */
+      res -= mat_values[jj] * x_ghost[jj];
    }
-   return res / A.diag[i];
+   return res / diag[i];
 }
 
-void JacobiRelaxAtomic_CSC(Matrix A, double **r, double z, int i)
+void JacobiRelaxAtomic_CSC(SparseMatrix A, double **r, double z, int i)
 {
-   for (int jj = A.start[i]; jj < A.start[i+1]; jj++){
-      int ii = A.i[jj];
+   vector<int> start = A.GetIndexStarts();
+   vector<int> row_idx = A.GetRowIndices();
+   vector<double> mat_values = A.GetValues();
+
+   for (int jj = start[i]; jj < start[i+1]; jj++){
+      int ii = row_idx[jj];
       #pragma omp atomic
-      (*r)[ii] -= A.data[jj] * z;
+      (*r)[ii] -= mat_values[jj] * z;
    }
 }
 
-void JacobiRelax_CSC(Matrix A, double **r, double z, int i)
+void JacobiRelax_CSC(SparseMatrix A, double **r, double z, int i)
 {
-   for (int jj = A.start[i]; jj < A.start[i+1]; jj++){
-      int ii = A.i[jj];
-      (*r)[ii] -= A.data[jj] * z;
+   vector<int> start = A.GetIndexStarts();
+   vector<int> row_idx = A.GetRowIndices();
+   vector<double> mat_values = A.GetValues();
+
+   for (int jj = start[i]; jj < start[i+1]; jj++){
+      int ii = row_idx[jj];
+      (*r)[ii] -= mat_values[jj] * z;
    }
 }

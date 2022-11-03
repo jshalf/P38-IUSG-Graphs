@@ -22,6 +22,7 @@ void SparseTriSolver::Setup(OutputData &output_data_input)
    int num_rows = A->GetNumRows();
    start = omp_get_wtime();
 
+   /* Natural ordering is default for a trisolver */
    idx_solve_order.resize(num_rows);
    for (int i = 0; i < num_rows; i++){
       idx_solve_order[i] = i;
@@ -35,6 +36,7 @@ void SparseTriSolver::InitSolveData(void)
 
 }
 
+/* Base function that calls different trsolve algorithms */
 void SparseTriSolver::Solve(std::vector<double> b_input,
                             std::vector<double> &x_input,
                             OutputData &output_data_input)
@@ -48,15 +50,18 @@ void SparseTriSolver::Solve(std::vector<double> b_input,
    int num_threads = num_procs;
 
    wtime_start = omp_get_wtime();
+   /* Sequential solver */
    if (num_threads == 1){
       SequentialSolve();
    }
+   /* Parallel solver */
    else {
 #ifdef USE_STDTHREAD
       thread_info.th.resize(num_threads);
       vector<TriSolveParArg> arg_vec(num_threads);
       //thread_info.bar = new std::barrier(num_threads);
       pthread_barrier_init(&(pthread_info.barrier), NULL, num_threads);
+      /* Spawn threads */
       for (int t = 0; t < num_threads; t++){
          arg_vec[t].proc_id = t;
          arg_vec[t].b = b_ptr;
@@ -65,10 +70,12 @@ void SparseTriSolver::Solve(std::vector<double> b_input,
          //               NULL,
          //               (THREADFUNCPTR) &SparseTriSolver::ParallelSolveVoidStar,
          //               &(arg_vec[t]));
+         /* Each thread executes the parallel trisolve function */
          thread_info.th[t] = new std::thread(&SparseTriSolver::ParallelSolveFunc,
                                              this,
                                              &(arg_vec[t]));
       }
+      /* Join the threads */
       for (int t = 0; t < num_threads; t++) {
          thread_info.th[t]->join();
          //pthread_join(pthread_info.threads[t], NULL);
@@ -78,34 +85,46 @@ void SparseTriSolver::Solve(std::vector<double> b_input,
       TriSolveParArg arg;
       arg.b = b_ptr;
       arg.x = x_ptr;
+      /* For OpenMP and devastator, simply call the trisolve parallel function */
       ParallelSolveFunc(&arg);
 #endif
    }
 }
 
+/* Sequential trisolve */
 void SparseTriSolver::SequentialSolve(void)
 {
-   double wtime_start = omp_get_wtime();
-
+   double wtime_start, wtime_stop;
+   uint64_t cycles_start, cycles_stop;
    int num_rows = A->GetNumRows();
    int nnz = A->GetNNZ();
+   SparseMatrixStorageType spmat_store_type = A->GetStorageType();
+
+   wtime_start = omp_get_wtime();
+   cycles_start = rdtsc();
+
    vector<int> start = A->GetIndexStarts();
-   vector<int> row_idx = A->GetRowIndices();
-   vector<int> col_idx = A->GetColIndices();
    vector<double> mat_values = A->GetValues();
    vector<double> diag = A->GetDiagValues();
-   SparseMatrixStorageType spmat_store_type = A->GetStorageType();
+   vector<int> idx;
+   if (spmat_store_type == SparseMatrixStorageType::CSC){
+      idx = A->GetRowIndices();
+   }
+   else {
+      idx = A->GetColIndices();
+   }
 
    std::vector<double> &x = *x_ptr;
    std::vector<double> b =  *b_ptr;
 
+   /* Solve rows in natural order */
    if (spmat_store_type == SparseMatrixStorageType::CSC){
       for (int i = 0; i < num_rows; i++) x[i] = b[i];
       for (int ii = 0; ii < num_rows; ii++){
          int i = idx_solve_order[ii];
          x[i] /= diag[i];
          for (int kk = start[i]; kk < start[i+1]; kk++){
-            x[row_idx[kk]] -= mat_values[kk] * x[i];
+            x[idx[kk]] -= mat_values[kk] * x[i];
          }
       }
    }
@@ -114,13 +133,17 @@ void SparseTriSolver::SequentialSolve(void)
          int i = idx_solve_order[ii];
          x[i] = b[i];
          for (int kk = start[i]; kk < start[i+1]; kk++){
-            x[i] -= mat_values[kk] * x[col_idx[kk]];
+            x[i] -= mat_values[kk] * x[idx[kk]];
          }
          x[i] /= diag[i];
       }
    }
 
-   output_data_ptr->solve_wtime_vec[0] = omp_get_wtime() - wtime_start;
+   cycles_stop = rdtsc();
+   wtime_stop = omp_get_wtime();
+
+   output_data_ptr->solve_cycles_vec[0] = cycles_stop - cycles_start;   
+   output_data_ptr->solve_wtime_vec[0] = wtime_stop - wtime_start;
 }
 
 
@@ -149,8 +172,10 @@ void LevelSchedTriSolver::Setup(OutputData &output_data_input)
 
    start = omp_get_wtime();
 
+   /* Compute the level sets */
    LevelSets(*A, &(level_set_info), 1);
 
+   
    level_para_info.resize(level_set_info.num_levels);
    for (int l = 0; l < level_set_info.num_levels; l++){
       /* communication parameters */
@@ -160,6 +185,7 @@ void LevelSchedTriSolver::Setup(OutputData &output_data_input)
       para_input.part_input.size_glob = level_set_info.level_start[l+1] - level_set_info.level_start[l];
       para_input.part_input.idx_glob = level_set_info.order;
       level_para_info[l] = new ParallelInfo(num_procs, para_input);
+      /* Construct partition for each level */
       level_para_info[l]->Part()->ConstructPartition();
    }
 
@@ -212,7 +238,8 @@ void LevelSchedTriSolver::ParallelSolveFunc(TriSolveParArg *arg)
 #endif
 
       if (spmat_store_type == SparseMatrixStorageType::CSC){
-         for (int l = 0; l < level_set_info.num_levels; l++){ /* loop over level sets */
+         /* loop over level sets and solve equations in the same level in parallel */
+         for (int l = 0; l < level_set_info.num_levels; l++){
             int n_loc = level_para_info[l]->Part()->GetPartitionSize()[tid];
             vector<unsigned int> my_rows = level_para_info[l]->Part()->GetPartition()[tid];
             for (int i_loc = 0; i_loc < n_loc; i_loc++) {
@@ -229,8 +256,8 @@ void LevelSchedTriSolver::ParallelSolveFunc(TriSolveParArg *arg)
             }
             num_iters++;
 
+           /* block until other threads have finished this level */
 #ifdef USE_STDTHREAD
-            //printf("%d %d\n", l, tid);
             pthread_barrier_wait(&(pthread_info.barrier));
 #else
             #pragma omp barrier
@@ -238,7 +265,8 @@ void LevelSchedTriSolver::ParallelSolveFunc(TriSolveParArg *arg)
          }
       }
       else {
-         for (int l = 0; l < level_set_info.num_levels; l++){ /* loop over level sets */
+         /* loop over level sets and solve equations in the same level in parallel */
+         for (int l = 0; l < level_set_info.num_levels; l++){
             int n_loc = level_para_info[l]->Part()->GetPartitionSize()[tid];
             vector<unsigned int> my_rows = level_para_info[l]->Part()->GetPartition()[tid];
             for (int i_loc = 0; i_loc < n_loc; i_loc++) {
@@ -251,6 +279,7 @@ void LevelSchedTriSolver::ParallelSolveFunc(TriSolveParArg *arg)
                x[i] /= diag[i];
             }
             num_iters++;
+            /* block until other threads have finished this level */
 #ifdef USE_STDTHREAD
             pthread_barrier_wait(&(pthread_info.barrier));
 #else
@@ -319,6 +348,7 @@ void AsyncTriSolver::Setup(OutputData &output_data_input,
 
    wtime_start = omp_get_wtime();
 
+   /* Async trisolver can use natural or level scheduled ordering */
    if (solve_order == TriSolverSolveOrder::level_sched){
       LevelSets(*A, &(level_set_info), 1);
       para_input.part_input.idx_glob = level_set_info.order;
@@ -336,14 +366,17 @@ void AsyncTriSolver::Setup(OutputData &output_data_input,
    para_input.part_input.size_glob = num_rows;
    para_input.part_input.lump = 1;
    para_info = new ParallelInfo(num_procs, para_input);
+   /* Construct partition */
    para_info->Part()->ConstructPartition();
    para_info->Part()->ConstructIndexToProcMap();
    para_info->Part()->ConstructGlobToLocIndexMap();
 
+   /* Construct communication mechanism (msgQ or atomic) */
    if (para_info->Comm()->GetCommType() == CommunicationType::MsgQ){
 #if USE_DEVA
       Q = new MessageQueue<TriSolveCSRMessage>(num_procs);
 #else
+      /* For performance reasons, each thread has a separate queue for each other thread */
       Q.resize(num_procs);
       for (int p = 0; p < num_procs; p++){
          Q[p] = new MessageQueue<TriSolveCSRMessage>(qstride * num_procs);
@@ -408,12 +441,11 @@ void AsyncTriSolver::ParallelSolveFunc(TriSolveParArg *arg)
 //
 //}
 
-
+/* Async solver using message queues */
 void AsyncTriSolver::ParallelSolveFunc_MsgQ(TriSolveParArg *arg)
 {
    std::vector<double>& b = *(arg->b);
    std::vector<double>& x = *(arg->x);
-
 
    int num_threads = num_procs;
 
@@ -431,20 +463,25 @@ void AsyncTriSolver::ParallelSolveFunc_MsgQ(TriSolveParArg *arg)
    {
       int tid = omp_get_thread_num();
 #endif
-      int num_rows = A->GetNumRows();
-      vector<int> start = A->GetIndexStarts();
-      vector<int> row_idx = A->GetRowIndices();
-      vector<int> col_idx = A->GetColIndices();
-      vector<double> mat_values = A->GetValues();
-      vector<double> diag = A->GetDiagValues();
-      SparseMatrixStorageType spmat_store_type = A->GetStorageType();
-      vector<unsigned int> row_to_proc_map = para_info->Part()->GetIndexToProcMap();
-
-
       double solve_start, solve_stop;
+      uint64_t cycles_start, cycles_stop;
       int num_relax = 0, num_iters = 0;
       int num_qPuts = 0, num_qGets = 0;
       int num_spins = 0, nothing_spins = 0;
+      int MsgQ_noop_flag = 0;
+
+      int num_rows = A->GetNumRows();
+      SparseMatrixStorageType spmat_store_type = A->GetStorageType();
+      vector<unsigned int> row_to_proc_map = para_info->Part()->GetIndexToProcMap();
+
+      cycles_start = rdtsc();
+      vector<int> start = A->GetIndexStarts();
+      //vector<int> row_idx = A->GetRowIndices();
+      vector<int> col_idx = A->GetColIndices();
+      vector<double> mat_values = A->GetValues();
+      vector<double> diag = A->GetDiagValues();
+      cycles_stop = rdtsc();
+      output_data_ptr->solve_cycles_vec[tid] = cycles_stop - cycles_start;
 
       vector<unsigned int> my_rows = para_info->Part()->GetPartition()[tid];
       unordered_map<unsigned int, unsigned int> glob_to_loc_map = para_info->Part()->GetGlobToLocIndexMap()[tid];
@@ -458,15 +495,19 @@ void AsyncTriSolver::ParallelSolveFunc_MsgQ(TriSolveParArg *arg)
          int i = my_rows[i_loc];
          int i_nnz = start[i+1] - start[i];
  
-         if (i_nnz == 0){
+         if (i_nnz == 0 || MsgQ_noop_flag){
             ready_to_solve.push(i_loc);
+            deps_counts[i_loc] = 0;
          }
-         deps_counts[i_loc] = i_nnz;
+         else {
+            deps_counts[i_loc] = i_nnz;
+         }
 
          x_loc[i_loc] = b[i];
       }
 
       solve_start = omp_get_wtime();
+      cycles_start = rdtsc(); 
 
       while (1){
          /* solve equations that are ready to be solved */
@@ -479,6 +520,7 @@ void AsyncTriSolver::ParallelSolveFunc_MsgQ(TriSolveParArg *arg)
             for (int j = 0; j < qPut_dst_rows[i].size(); j++){
                int dst_row = qPut_dst_rows[i][j];
                int p = row_to_proc_map[dst_row];
+               /* If the dependency is a row assigned to this thread, don't use message queues */
                if (p == tid){
                   unsigned int dst_row_loc = glob_to_loc_map[dst_row];
                   for (int jj = start[dst_row]; jj < start[dst_row+1]; jj++){
@@ -492,17 +534,20 @@ void AsyncTriSolver::ParallelSolveFunc_MsgQ(TriSolveParArg *arg)
                      ready_to_solve.push(dst_row_loc);
                   }
                }
+               /* If the dependency is a row assigned to a different thread, use message queues */
                else {
-                  TriSolveCSRMessage msg;
-                  msg.src_row = i;
-                  msg.dst_row = dst_row;
-                  msg.data = xi;
+                  if (MsgQ_noop_flag == 0){
+                     TriSolveCSRMessage msg;
+                     msg.src_row = i;
+                     msg.dst_row = dst_row;
+                     msg.data = xi;
 #if USE_DEVA
-                  Q->qPut(p, msg);
+                     Q->qPut(p, msg);
 #else
-                  Q[p]->qPut(qstride * tid, msg);
+                     Q[p]->qPut(qstride * tid, msg);
 #endif
-                  num_qPuts++;
+                     num_qPuts++;
+                  }
                }
             } 
             ready_to_solve.pop();
@@ -537,6 +582,7 @@ void AsyncTriSolver::ParallelSolveFunc_MsgQ(TriSolveParArg *arg)
                      }
                   }
                   deps_counts[i_loc]--;
+                  /* indicate that the final dependency is now satisfied */
                   if (deps_counts[i_loc] == 0){
                      ready_to_solve.push(i_loc);
                   }
@@ -580,7 +626,7 @@ void AsyncTriSolver::ParallelSolveFunc_MsgQ(TriSolveParArg *arg)
          //}
       }
       
-
+      cycles_stop = rdtsc();
       solve_stop = omp_get_wtime();
 
       //printf("%d %d %d %d\n", tid, n_loc, num_spins, nothing_spins);
@@ -590,6 +636,7 @@ void AsyncTriSolver::ParallelSolveFunc_MsgQ(TriSolveParArg *arg)
          x[i] = x_loc[i_loc];
       }
 
+      output_data_ptr->solve_cycles_vec[tid] += cycles_stop - cycles_start;
       output_data_ptr->solve_wtime_vec[tid] = solve_stop - solve_start;
       output_data_ptr->num_relax[tid] = num_relax;
       output_data_ptr->num_iters[tid] = num_iters;
@@ -606,7 +653,7 @@ void AsyncTriSolver::ParallelSolveFunc_MsgQ(TriSolveParArg *arg)
    
 }
 
-
+/* Async trisolve using atomics */
 //TODO: fix STD atomic load and stores (not getting correct answer)
 void AsyncTriSolver::ParallelSolveFunc_Atomic(TriSolveParArg *arg)
 {

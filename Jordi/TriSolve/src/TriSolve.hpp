@@ -33,6 +33,7 @@ typedef struct{
 //   Cache<double> data;
 //} TriSolveCSRMessage;
 
+/* Message data used in the message queues */
 typedef struct {
    int src_row;
    int dst_row;
@@ -41,7 +42,7 @@ typedef struct {
 
 enum class TriSolverMethod {
    sequential,
-   sync,
+   sync, /* level-scheduled */
    async,
    async_fine_grained
 };
@@ -55,6 +56,7 @@ typedef struct TriSolveParArgStruct : SolverParArg {
    ;
 } TriSolveParArg;
 
+/* Base class for sparse trisolver */
 class SparseTriSolver : public SparseSolver
 {
 public:
@@ -76,6 +78,7 @@ protected:
    std::vector<unsigned int> idx_solve_order;
 };
 
+/* Level-scheduled trisolve */
 class LevelSchedTriSolver : public SparseTriSolver
 {
 public:
@@ -100,10 +103,15 @@ protected:
    //void *ParallelSolveVoidStar(void *arg) override;
    void ParallelSolveFunc(TriSolveParArg *arg);
 
+   /* Level set data */
    LevelSetData level_set_info;
+
+   /* Partitioning information for each level */
    vector<ParallelInfo *> level_para_info;
 };
 
+
+/* Asynchronous trisolver */
 class AsyncTriSolver : public SparseTriSolver
 {
 public:
@@ -138,6 +146,8 @@ protected:
    LevelSetData level_set_info;
    ParallelInfo *para_info;
    TriSolverSolveOrder solve_order;
+
+   /* Conatiners used to track data dependencies */
 #ifdef USE_STDTHREAD
    //vector<AtomicType<unsigned short>> row_solved;
    std::atomic<unsigned short> *row_solved;
@@ -145,6 +155,7 @@ protected:
    vector<unsigned short int> row_solved;
 #endif
 
+   /* Once an equation i is solved, qPut_dst_rows[i] is the vector of equations that depends on i */
    vector<vector<unsigned int>> qPut_dst_rows;
 #if USE_DEVA
    MessageQueue<TriSolveCSRMessage> *Q;

@@ -1,10 +1,27 @@
-#include "../../src/Main.hpp"
-#include "../../src/Misc.hpp"
-#include "../../src/Matrix.hpp"
+#include "Main.hpp"
+#include "Misc.hpp"
+#include "Matrix.hpp"
 #include "Jacobi.hpp"
+
+double Residual2Norm(SparseMatrix A, double *x, double *b);
+double Residual2Norm_CSC(SparseMatrix A, /* sparse matrix data (input) */
+                         double *x, /* solution (input) */
+                         double *b /* right-hand side (input) */
+                         );
 
 int main (int argc, char *argv[])
 {
+   /* matrix defaults */
+   SparseMatrixInput spm_input;
+   spm_input.mat_type = MatrixType::symm;
+   spm_input.file_type = FileType::bin;
+   spm_input.num_rows = 100;
+   spm_input.num_cols = 100;
+   spm_input.grid_len.resize(1);
+   spm_input.grid_len[0] = 10;
+   spm_input.store_type = SparseMatrixStorageType::CSR;
+   spm_input.store_diag_in_vec = true;
+
    /* set defaults */
    SolverData solver;
    solver.input.solver_type = ASYNC_JACOBI;
@@ -12,19 +29,17 @@ int main (int argc, char *argv[])
    solver.input.num_iters = 200;
    solver.input.atomic_flag = 1;
    solver.input.MsgQ_flag = 0;
-   solver.input.mat_storage_type = MATRIX_STORAGE_CSR;
    solver.input.comp_wtime_flag = 0;
    solver.input.MsgQ_wtime_flag = 0;
    solver.input.MsgQ_cycles_flag = 0;
    solver.input.comp_noop_flag = 0;
    solver.input.MsgQ_noop_flag = 0;
-   solver.input.symm_flag = 1;
-   solver.input.print_traces_flag = 0;
    int verbose_output = 0;
    int num_runs = 1;
    int m = 10; 
    double w = 1.0;
    int problem_type = PROBLEM_5PT_POISSON;
+   char mat_file_str[128];
 
    int arg_index = 0;
    int print_usage = 0;
@@ -37,7 +52,7 @@ int main (int argc, char *argv[])
          else if (strcmp(argv[arg_index], "file") == 0){ /* read matrix from binary file */
             arg_index++;
             problem_type = PROBLEM_FILE;
-            strcpy(solver.input.mat_file_str, argv[arg_index]);
+            strcpy(mat_file_str, argv[arg_index]);
          }
       }
       else if (strcmp(argv[arg_index], "-solver") == 0){ /* solver name */
@@ -51,7 +66,7 @@ int main (int argc, char *argv[])
       }
       else if (strcmp(argv[arg_index], "-n") == 0){ /* size of matrix. n*n rows for Laplace, n rows otherwise */
          arg_index++;
-         m = atoi(argv[arg_index]);
+         spm_input.grid_len[0] = atoi(argv[arg_index]);
       }
       else if (strcmp(argv[arg_index], "-num_iters") == 0){ /* max number of iterations */
          arg_index++;
@@ -81,15 +96,15 @@ int main (int argc, char *argv[])
       else if (strcmp(argv[arg_index], "-help") == 0){ /* print command line options */
          print_usage = 1;
       }
-      else if (strcmp(argv[arg_index], "-sp_store_type") == 0){ /* matrix storage type */
-         arg_index++;
-         if (strcmp(argv[arg_index], "csr") == 0){ /* compressed sparse row */
-            solver.input.mat_storage_type = MATRIX_STORAGE_CSR;
-         }
-         else if (strcmp(argv[arg_index], "csc") == 0){ /* compressed sparse column */
-            solver.input.mat_storage_type = MATRIX_STORAGE_CSC;
-         }
-      }
+      //else if (strcmp(argv[arg_index], "-sp_store_type") == 0){ /* matrix storage type */
+      //   arg_index++;
+      //   if (strcmp(argv[arg_index], "csr") == 0){ /* compressed sparse row */
+      //      solver.input.mat_storage_type = MATRIX_STORAGE_CSR;
+      //   }
+      //   else if (strcmp(argv[arg_index], "csc") == 0){ /* compressed sparse column */
+      //      solver.input.mat_storage_type = MATRIX_STORAGE_CSC;
+      //   }
+      //}
       else if (strcmp(argv[arg_index], "-MsgQ_wtime") == 0){
          solver.input.MsgQ_wtime_flag = 1;
       }
@@ -104,9 +119,6 @@ int main (int argc, char *argv[])
       }
       else if (strcmp(argv[arg_index], "-comp_noop") == 0){
          solver.input.comp_noop_flag = 1;
-      }
-      else if (strcmp(argv[arg_index], "-print_traces") == 0){
-         solver.input.print_traces_flag = 1;
       }
       arg_index++;
    }
@@ -130,31 +142,24 @@ int main (int argc, char *argv[])
       printf("\n");
       return 0;
    }
+
+   if (solver.input.solver_type == SYNC_JACOBI){
+      solver.input.MsgQ_flag = 0;
+   }
    
    omp_set_num_threads(solver.input.num_threads);
 
-   int csc_flag = 0, coo_flag = 0;
-   if (solver.input.mat_storage_type == MATRIX_STORAGE_CSC){
-      csc_flag = 1;
-   }
-   int include_diag = 1;
-
    /* set up problem */
-   Matrix A;
+   SparseMatrix A(spm_input);
+
    if (problem_type == PROBLEM_FILE){
-      char A_mat_file_str[128];
-      sprintf(A_mat_file_str, "%s", solver.input.mat_file_str);
-      freadBinaryMatrix(A_mat_file_str, &A, include_diag, csc_flag, coo_flag, MATRIX_NONSYMMETRIC);
-      //char A_outfile[128];
-      //sprintf(A_outfile, "./matlab/A.txt");
-      //PrintCOO(A, A_outfile, 0);
+      A.ConstructMatrixFromFile();
    }
    else {
-      sprintf(solver.input.mat_file_str, "%s", "5pt");
-      Laplace_2D_5pt(solver.input, &A, m);
+      A.ConstructLaplace2D5pt();
    }
 
-   int n = A.n;
+   int n = A.GetNumRows();
    double *x = (double *)calloc(n, sizeof(double));
    double *b = (double *)calloc(n, sizeof(double));
 
@@ -196,22 +201,21 @@ int main (int argc, char *argv[])
       }
       srand(0);
       for (int i = 0; i < n; i++){
-         b[i] = i+1;//RandDouble(-1.0, 1.0);
+         b[i] = 1.0;//RandDouble(-1.0, 1.0);
          x[i] = 0;
       }
       /* run Jacobi solver */
       Jacobi(&solver, A, b, &x);
 
+      for (int i = 0; i < n; i++){
+         //printf("%f\n", x[i]);
+      }
+
       double solve_wtime_sum = accumulate(solver.output.solve_wtime_vec, solver.output.solve_wtime_vec+solver.input.num_threads, (double)0.0);
       solver.output.solve_wtime = solve_wtime_sum / (double)solver.input.num_threads;
 
       double res_norm;
-      if (solver.input.mat_storage_type == MATRIX_STORAGE_CSC){
-         res_norm = Residual2Norm_CSC(A, x, b);
-      }
-      else {
-         res_norm = Residual2Norm(A, x, b);
-      }
+      res_norm = Residual2Norm(A, x, b);
 
       double MsgQ_put_wtime_sum = 0.0, MsgQ_put_wtime_mean = 0.0;
       double MsgQ_get_wtime_sum = 0.0, MsgQ_get_wtime_mean = 0.0;
@@ -303,4 +307,62 @@ int main (int argc, char *argv[])
    }
 
    return 0;
+}
+
+
+/* Residual L2-norm, i.e., ||b - Ax||_2, using OpenMP reduction */
+double Residual2Norm(SparseMatrix A, /* sparse matrix data (input) */
+                     double *x, /* solution (input) */
+                     double *b /* right-hand side (input) */
+                     )
+{
+   int n = A.GetNumRows();
+   vector<int> start = A.GetIndexStarts();
+   vector<int> col_idx = A.GetColIndices();
+   vector<int> row_idx = A.GetRowIndices();
+   vector<double> mat_values = A.GetValues();
+   vector<double> diag = A.GetDiagValues();
+   double r_2norm = 0, b_2norm = 0;
+   if (A.GetStorageType() == SparseMatrixStorageType::CSC){
+      double *r = (double *)calloc(n, sizeof(double));
+      #pragma omp parallel
+      {
+         #pragma omp for
+         for (int i = 0; i < n; i++){
+            r[i] = b[i];
+         }
+         #pragma omp for
+         for (int i = 0; i < n; i++){
+            double xi = x[i];
+            for (int jj = start[i]; jj < start[i+1]; jj++){
+               int ii = row_idx[jj];
+               #pragma omp atomic
+               r[ii] -= mat_values[jj] * xi;
+            }
+         }
+
+         #pragma omp for reduction(+:r_2norm,b_2norm)
+         for (int i = 0; i < n; i++){
+            r_2norm += r[i]*r[i];
+            b_2norm += b[i]*b[i];
+         }
+      }
+      free(r);
+   }
+   else {
+      #pragma omp parallel for reduction(+:r_2norm,b_2norm)
+      for (int i = 0; i < n; i++){
+         /* compute residual inner product */
+         double res = b[i];
+         for (int jj = start[i]; jj < start[i+1]; jj++){
+            int ii = col_idx[jj];
+            res -= mat_values[jj] * x[ii];
+         }
+         r_2norm += res*res;
+         /* compute right-hand side inner product */
+         b_2norm += b[i]*b[i];
+      }
+   }
+
+   return sqrt(r_2norm)/sqrt(b_2norm);
 }

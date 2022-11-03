@@ -1,13 +1,13 @@
 #include "Histogram.hpp"
-#include "../../src/Matrix.hpp"
-#include "../../src/MsgQ.hpp"
-#include "../../src/Misc.hpp"
+#include "Matrix.hpp"
+#include "MsgQ.hpp"
+#include "Misc.hpp"
 
-int HistogramProgressFunc(Queue *Q,
+int HistogramProgressFunc(MessageQueue<int> *Q,
                           HistogramProgressData *HPD,
                           int flag
                           );
-int HistogramProgressFunc_Comp(Queue *Q,
+int HistogramProgressFunc_Comp(MessageQueue<int> *Q,
                                HistogramProgressData *HPD,
                                int flag,
                                double *dummy
@@ -15,7 +15,7 @@ int HistogramProgressFunc_Comp(Queue *Q,
 
 
 void Histogram_Seq(HistogramData *hist,
-                   int *index, int n_index,
+                   vector<int> index, int n_index,
                    int *Tally, int n_tally
                    )
 {
@@ -25,20 +25,18 @@ void Histogram_Seq(HistogramData *hist,
 }
 
 void Histogram_Par(HistogramData *hist,
-                   int *index, int n_index,
+                   vector<int> index, int n_index,
                    int *Tally, int n_tally
                    )
 {
    int lump = 1;
 
-   Queue Q, Qp; 
+   MessageQueue<int> *Q, *Qp; 
    if (hist->input.MsgQ_flag == 1){
-      qAlloc(&Q, n_tally);
-      qInitLock(&Q);
-      
       int num_threads2 = hist->input.num_threads * hist->input.num_threads;
-      qAlloc(&Qp, num_threads2);
-      qInitLock(&Qp);
+
+      Q = new MessageQueue<int>(n_tally);
+      Qp = new MessageQueue<int>(num_threads2);
    }
 
    double *Tally_reduce;
@@ -123,26 +121,26 @@ void Histogram_Par(HistogramData *hist,
             for (i_loc = 0; i_loc < n_index_loc; i_loc++){
                int i = my_index_part[i_loc];
                int index_i = index[i];
-               qPut(&Q, index_i, 1.0);
+               Q->qPut(index_i, 1);
                num_qPuts++;
                HPD.num_qPuts[index_i % num_threads]++;
             }
-            HistogramProgressFunc(&Qp, &HPD, PROGRESS_QPUT);
+            HistogramProgressFunc(Qp, &HPD, PROGRESS_QPUT);
             int num_spins = 0;
             int progress_flag;
             do {
                for (i_loc = 0; i_loc < n_tally_loc; i_loc++){
                   int i = my_tally_part[i_loc];
-                  double z;
+                  int z;
                   int get_flag;
-                  get_flag = qGet(&Q, i, &z);
+                  get_flag = Q->qGet(i, &z);
                   if (get_flag == 1){
                      Tally_loc[i_loc]++;
                      num_qGets++;
                      HPD.num_qGets = num_qGets;
                   }
                }
-               progress_flag = HistogramProgressFunc(&Qp, &HPD, PROGRESS_QGET);
+               progress_flag = HistogramProgressFunc(Qp, &HPD, PROGRESS_QGET);
                num_spins++;
             } while (progress_flag == 0);
             num_qGets += num_threads;
@@ -161,7 +159,7 @@ void Histogram_Par(HistogramData *hist,
                dummy_num_qPuts++;
                HPD.num_qPuts[index_i % num_threads]++;
             }
-            HistogramProgressFunc_Comp(&Qp, &HPD, PROGRESS_QPUT, &dummy);
+            HistogramProgressFunc_Comp(Qp, &HPD, PROGRESS_QPUT, &dummy);
             for (int s = 0; s < num_spins; s++){
                for (i_loc = 0; i_loc < n_tally_loc; i_loc++){
                   int i = my_tally_part[i_loc];
@@ -175,7 +173,7 @@ void Histogram_Par(HistogramData *hist,
                      HPD.num_qGets = num_qGets;
                   }
                }
-               progress_flag = HistogramProgressFunc_Comp(&Qp, &HPD, PROGRESS_QGET, &dummy);
+               progress_flag = HistogramProgressFunc_Comp(Qp, &HPD, PROGRESS_QGET, &dummy);
                dummy_num_spins++;
             }
             num_qGets += num_threads;
@@ -193,26 +191,26 @@ void Histogram_Par(HistogramData *hist,
             for (i_loc = 0; i_loc < n_index_loc; i_loc++){
                int i = my_index_part[i_loc];
                int index_i = index[i];
-               qPut(&Q, index_i, 1.0);
+               Q->qPut(index_i, 1);
                num_qPuts++;
                HPD.num_qPuts[index_i % num_threads]++;
             }
-            HistogramProgressFunc(&Qp, &HPD, PROGRESS_QPUT);
+            HistogramProgressFunc(Qp, &HPD, PROGRESS_QPUT);
             int num_spins = 0;
             int progress_flag;
             do {
                for (i_loc = 0; i_loc < n_tally_loc; i_loc++){
                   int i = my_tally_part[i_loc];
-                  double z;
+                  int z;
                   int get_flag;
-                  get_flag = qGet(&Q, i, &z);
+                  get_flag = Q->qGet(i, &z);
                   if (get_flag == 1){
                      Tally_loc[i_loc]++;
                      num_qGets++;
                      HPD.num_qGets = num_qGets;
                   }
                }
-               progress_flag = HistogramProgressFunc(&Qp, &HPD, PROGRESS_QGET);
+               progress_flag = HistogramProgressFunc(Qp, &HPD, PROGRESS_QGET);
                num_spins++;
             } while (progress_flag == 0);
             num_qGets += num_threads;
@@ -231,12 +229,12 @@ void Histogram_Par(HistogramData *hist,
                dummy_num_qPuts++;
                HPD.num_qPuts[index_i % num_threads]++;
             }
-            HistogramProgressFunc_Comp(&Qp, &HPD, PROGRESS_QPUT, &dummy);
+            HistogramProgressFunc_Comp(Qp, &HPD, PROGRESS_QPUT, &dummy);
             for (int s = 0; s < num_spins; s++){
                for (i_loc = 0; i_loc < n_tally_loc; i_loc++){
                   int i = my_tally_part[i_loc];
                   dummy += i;
-                  double z;
+                  int z;
                   int get_flag;
                   get_flag = 1;
                   if (get_flag == 1){
@@ -245,7 +243,7 @@ void Histogram_Par(HistogramData *hist,
                      HPD.num_qGets = num_qGets;
                   }
                }
-               progress_flag = HistogramProgressFunc_Comp(&Qp, &HPD, PROGRESS_QGET, &dummy);
+               progress_flag = HistogramProgressFunc_Comp(Qp, &HPD, PROGRESS_QGET, &dummy);
                dummy_num_spins++;
             }
             num_qGets += num_threads;
@@ -261,26 +259,26 @@ void Histogram_Par(HistogramData *hist,
             for (i_loc = 0; i_loc < n_index_loc; i_loc++){
                int i = my_index_part[i_loc];
                int index_i = index[i];
-               qPut(&Q, index_i, 1.0);
+               Q->qPut(index_i, 1);
                num_qPuts++;
                HPD.num_qPuts[index_i % num_threads]++;
             }
-            HistogramProgressFunc(&Qp, &HPD, PROGRESS_QPUT);
+            HistogramProgressFunc(Qp, &HPD, PROGRESS_QPUT);
             int num_spins = 0;
             int progress_flag;
             do {
                for (i_loc = 0; i_loc < n_tally_loc; i_loc++){
                   int i = my_tally_part[i_loc];
-                  double z;
+                  int z;
                   int get_flag;
-                  get_flag = qGet(&Q, i, &z);
+                  get_flag = Q->qGet(i, &z);
                   if (get_flag == 1){
                      Tally_loc[i_loc]++;
                      num_qGets++;
                      HPD.num_qGets = num_qGets;
                   }
                }
-               progress_flag = HistogramProgressFunc(&Qp, &HPD, PROGRESS_QGET);
+               progress_flag = HistogramProgressFunc(Qp, &HPD, PROGRESS_QGET);
                num_spins++;
             } while (progress_flag == 0);
             num_qGets += num_threads;
@@ -296,7 +294,7 @@ void Histogram_Par(HistogramData *hist,
                dummy_num_qPuts++;
                HPD.num_qPuts[index_i % num_threads]++;
             }
-            HistogramProgressFunc_Comp(&Qp, &HPD, PROGRESS_QPUT, &dummy);
+            HistogramProgressFunc_Comp(Qp, &HPD, PROGRESS_QPUT, &dummy);
             for (int s = 0; s < num_spins; s++){
                for (i_loc = 0; i_loc < n_tally_loc; i_loc++){
                   int i = my_tally_part[i_loc];
@@ -310,7 +308,7 @@ void Histogram_Par(HistogramData *hist,
                      HPD.num_qGets = dummy_num_qGets;
                   }
                }
-               progress_flag = HistogramProgressFunc_Comp(&Qp, &HPD, PROGRESS_QGET, &dummy);
+               progress_flag = HistogramProgressFunc_Comp(Qp, &HPD, PROGRESS_QGET, &dummy);
                dummy_num_spins++;
             }
             num_qGets += num_threads;
@@ -338,29 +336,33 @@ void Histogram_Par(HistogramData *hist,
           * standard scheme (no timers, no no-ops, etc...)
           *************************************************/
          else {
+            /* first send indices to be tallied by other threads */
             for (i_loc = 0; i_loc < n_index_loc; i_loc++){
                int i = my_index_part[i_loc]; 
                int index_i = index[i];
-               qPut(&Q, index_i, 1.0);
+               Q->qPut(index_i, 1);
                num_qPuts++;
                HPD.num_qPuts[index_i % num_threads]++;
             }
-            HistogramProgressFunc(&Qp, &HPD, PROGRESS_QPUT);
+            /* initiate non-blocking progress */
+            HistogramProgressFunc(Qp, &HPD, PROGRESS_QPUT);
             int progress_flag;
             int num_spins = 0;
             do {
                for (i_loc = 0; i_loc < n_tally_loc; i_loc++){
                   int i = my_tally_part[i_loc];
-                  double z;
+                  int z;
                   int get_flag;
-                  get_flag = qGet(&Q, i, &z);
+                  /* if data arrives, update local tally */
+                  get_flag = Q->qGet(i, &z);
                   if (get_flag == 1){
                      Tally_loc[i_loc]++;
                      num_qGets++;
                      HPD.num_qGets = num_qGets;
                   }
                }
-               progress_flag = HistogramProgressFunc(&Qp, &HPD, PROGRESS_QGET);
+               /* check and advance non-blocking progress */
+               progress_flag = HistogramProgressFunc(Qp, &HPD, PROGRESS_QGET);
             } while (progress_flag == 0);
             num_qGets += num_threads;
             num_qPuts += num_threads;
@@ -368,10 +370,12 @@ void Histogram_Par(HistogramData *hist,
       }
       else if (hist->input.reduce_flag == 1){
          int j_offset = n_tally * tid;
+         /* update local tally */
          #pragma omp for schedule(static, lump)
          for (int i = 0; i < n_index; i++){
             Tally_reduce[j_offset + index[i]]++;
          }
+         /* sum local tallys */
          #pragma omp for schedule(static, lump) nowait
          for (int i = 0; i < n_tally; i++){
             Tally[i] = 0;
@@ -382,6 +386,7 @@ void Histogram_Par(HistogramData *hist,
          }
       }
       else if (hist->input.atomic_flag == 1){
+         /* atomically update global tally */
          for (i_loc = 0; i_loc < n_index_loc; i_loc++){
             int i = my_index_part[i_loc];
             #pragma omp atomic
@@ -441,15 +446,11 @@ void Histogram_Par(HistogramData *hist,
    }
 
    if (hist->input.MsgQ_flag == 1){
-      qDestroyLock(&Q);
-      qFree(&Q);
-      
-      qDestroyLock(&Qp);
-      qFree(&Qp);
    }
 }
 
-int HistogramProgressFunc(Queue *Q,
+/* progress func */
+int HistogramProgressFunc(MessageQueue<int> *Q,
                           HistogramProgressData *HPD,
                           int flag
                           )
@@ -458,27 +459,33 @@ int HistogramProgressFunc(Queue *Q,
    int num_threads = HPD->num_threads;
    int tid = HPD->tid;
 
+   /* initial call should have the PROGRESS_QPUT flag */
    if (flag == PROGRESS_QPUT){
       for (int t = 0; t < num_threads; t++){
          //if (t != tid){
-            qPut(Q, num_threads*t+tid, HPD->num_qPuts[t]);
+            Q->qPut(num_threads*t+tid, HPD->num_qPuts[t]);
          //}
       }
       progress_flag = 1;
    }
+   /* subsequent calls should have the PROGRESS_QGET flag */
    else {
       if (HPD->thread_recv_count < num_threads){
+         /* check for progress messages from other threads */
          for (int t = 0; t < num_threads; t++){
-            double t_num_gets;
+            int t_num_gets;
             //if (t != tid){
-               int get_flag = qGet(Q, num_threads*tid+t, &t_num_gets);
+               int get_flag = Q->qGet(num_threads*tid+t, &t_num_gets);
                if (get_flag == 1){
+                  /* upon receipt, update total number of messages that
+                     need to be received to complete the histogram computation */
                   HPD->actual_num_qGets += (int)t_num_gets;
                   HPD->thread_recv_count++;
                }
             //}
          }
       }
+      /* if we've received from all threads, no need to keep checking the progress queue */
       if (HPD->thread_recv_count == num_threads){
          if (HPD->num_qGets == HPD->actual_num_qGets){
             progress_flag = 1;
@@ -489,7 +496,8 @@ int HistogramProgressFunc(Queue *Q,
    return progress_flag;
 }
 
-int HistogramProgressFunc_Comp(Queue *Q,
+/* progress func where only the computation is performed */
+int HistogramProgressFunc_Comp(MessageQueue<int> *Q,
                                HistogramProgressData *HPD,
                                int flag,
                                double *dummy 

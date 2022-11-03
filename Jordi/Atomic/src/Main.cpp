@@ -48,7 +48,24 @@ int main (int argc, char *argv[])
          arg_index++;
          n = atoi(argv[arg_index]);
       }
+      else if (strcmp(argv[arg_index], "-help") == 0){ /* print command line options */
+         print_usage = 1;
+      }
       arg_index++;
+   }
+
+   if (print_usage == 1){
+      printf("\n");
+      printf("-atomic_scheme <string>:        atomic scheme.\n");
+      printf("    multiple accumulate:        level scheduled method.\n");
+      printf("    single-write multiple-read: asynchronous method.\n");
+      printf("-n <int value>:                 size of array.\n");
+      printf("-num_threads <int value>:       number of OpenMP threads.\n");
+      printf("-no_atomic:                     turn off atomics.  Only meant for performance measurements and will not produce a correct result.\n");
+      printf("-num_runs <int value>:          number of independent runs.  Used for data collection.\n");
+      printf("-verb_out:                      verbose output.\n");
+      printf("-num_iters <int value>:         number of iterations in which each thread performs an atomic\n");
+      return 0;
    }
 
    int num_threads_write, num_threads_read;
@@ -88,7 +105,6 @@ int main (int argc, char *argv[])
  
    for (int run = 1; run <= num_runs; run++){
       //int root_tid = RandInt(0, num_threads-1, 0.0);
-      //printf("root tid %d\n", root_tid);
       #pragma omp parallel
       {
          int tid = omp_get_thread_num();
@@ -100,20 +116,23 @@ int main (int argc, char *argv[])
 
 
          if (atomic_scheme == ATOMIC_SINGLE_WRITE_MULTIPLE_READ){
+            /* First measure the number of cycles */
             if (atomic_flag == 1){
+               /* Root thread writes to array */
                if (tid == root_tid){
                   uint64_t cycles_start = rdtsc();
                   for (int iters = 0; iters < num_iters; iters++){
-                     #pragma omp atomic write
+                     #pragma omp atomic write relaxed
                      a[n*tid] = iters;
                   }
                   uint64_t cycles_stop = rdtsc();
                   cycles_sum_loc += cycles_stop - cycles_start;
                }
+               /* All other threads read from array */
                else {
                   uint64_t cycles_start = rdtsc();
                   for (int iters = 0; iters < num_iters; iters++){
-                     #pragma omp atomic read
+                     #pragma omp atomic read relaxed
                      b = a[n*tid];
                   }
                   uint64_t cycles_stop = rdtsc();
@@ -121,6 +140,7 @@ int main (int argc, char *argv[])
                }
             }
             else {
+               /* Root thread writes to array */
                if (tid == root_tid){
                   uint64_t cycles_start = rdtsc();
                   for (int iters = 0; iters < num_iters; iters++){
@@ -130,6 +150,7 @@ int main (int argc, char *argv[])
                   uint64_t cycles_stop = rdtsc();
                   cycles_sum_loc += cycles_stop - cycles_start;
                }
+               /* All other threads read from array */
                else {
                   uint64_t cycles_start = rdtsc();
                   for (int iters = 0; iters < num_iters; iters++){
@@ -144,20 +165,23 @@ int main (int argc, char *argv[])
             double wtime_sum_loc = 0;
             #pragma omp barrier
 
+            /* Now measure wall-clock time */
             if (atomic_flag == 1){
+               /* Root thread writes to array */
                if (tid == root_tid){
                   double wtime_start = omp_get_wtime();
                   for (int iters = 0; iters < num_iters; iters++){
-                     #pragma omp atomic write
+                     #pragma omp atomic write relaxed
                      a[n*tid] = b;
                   }
                   double wtime_stop = omp_get_wtime();
                   wtime_sum_loc += wtime_stop - wtime_start;
                }
+               /* All other threads read from array */
                else {
                   double wtime_start = omp_get_wtime();
                   for (int iters = 0; iters < num_iters; iters++){
-                     #pragma omp atomic read
+                     #pragma omp atomic read relaxed
                      b = a[n*tid];
                   }
                   double wtime_stop = omp_get_wtime();
@@ -165,6 +189,7 @@ int main (int argc, char *argv[])
                }
             }
             else {
+               /* Root thread writes to array */
                if (tid == root_tid){
                   double wtime_start = omp_get_wtime();
                   for (int iters = 0; iters < num_iters; iters++){
@@ -174,6 +199,7 @@ int main (int argc, char *argv[])
                   double wtime_stop = omp_get_wtime();
                   wtime_sum_loc += wtime_stop - wtime_start;
                }
+               /* All other threads read from array */
                else {
                   double wtime_start = omp_get_wtime();
                   for (int iters = 0; iters < num_iters; iters++){
@@ -198,10 +224,12 @@ int main (int argc, char *argv[])
             a[n*tid] += b;
          }
          else {
+            /* First measure the number of cycles */
             if (atomic_flag == 1){
                uint64_t cycles_start = rdtsc();
                for (int iters = 0; iters < num_iters; iters++){   
                   //dummy += b;
+                  /* All threads atomically update array */
                   #pragma omp atomic
                   a[n*tid] += b;
                }
@@ -212,6 +240,7 @@ int main (int argc, char *argv[])
                uint64_t cycles_start = rdtsc();
                for (int iters = 0; iters < num_iters; iters++){
                   //dummy += b;
+                  /* All threads atomically update array */
                   a[n*tid] += b;
                }
                uint64_t cycles_stop = rdtsc();
@@ -228,11 +257,12 @@ int main (int argc, char *argv[])
             double wtime_sum_loc = 0;
             #pragma omp barrier
 
-
+            /* First measure the number of cycles */
             if (atomic_flag == 1){
                double wtime_start = omp_get_wtime();
                for (int iters = 0; iters < num_iters; iters++){
                   //dummy += b;
+                  /* All threads atomically update array */
                   #pragma omp atomic
                   a[n*tid] += b;
                }
@@ -243,6 +273,7 @@ int main (int argc, char *argv[])
                double wtime_start = omp_get_wtime();
                for (int iters = 0; iters < num_iters; iters++){
                   //dummy += b;
+                  /* All threads atomically update array */
                   a[n*tid] += b;
                }
                double wtime_stop = omp_get_wtime();
@@ -265,6 +296,7 @@ int main (int argc, char *argv[])
          //PrintDummy(dummy);
       }
 
+      /* Compute means of all measurements */
       uint64_t read_cycles_mean = 0;
       for (int t = 0; t < num_threads; t++){
          read_cycles_mean += read_cycles_sum[t];
@@ -298,6 +330,7 @@ int main (int argc, char *argv[])
       }
       accum_wtime_mean /= (double)num_threads;
 
+      /* Print output */
       if (verbose_output){
          printf("Read wall-clock time  = %e\n"
                 "Read num cycles = %" PRIu64 "\n"
