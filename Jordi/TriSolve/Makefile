@@ -24,7 +24,7 @@ LIBS = -fopenmp -lm
 # {omp, pthreads, deva}
 parallel_backend ?= omp
 
-ifeq ($(par_backend),deva)
+ifeq ($(parallel_backend),deva)
   # assumes devastator is installed in sibling directory
 
   app_dir := $(shell pwd)
