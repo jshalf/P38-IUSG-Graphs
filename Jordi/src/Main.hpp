@@ -93,6 +93,7 @@ typedef struct{
    double *MsgQ_get_wtime_vec;
    double *MsgQ_put_wtime_vec;
    double *comp_wtime_vec;
+   uint64_t *solve_cycles_vec;
    uint64_t *MsgQ_get_cycles_vec;
    uint64_t *MsgQ_put_cycles_vec;
    int *num_iters; /* number of iterations */
