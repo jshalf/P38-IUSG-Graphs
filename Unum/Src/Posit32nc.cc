@@ -425,3 +425,9 @@ void Posit32nc::get(float &a){
     a=(float)v; // downconvert the double to float
 }
 
+//Posit32nc::Posit32nc(const Posit32nc &other) : PositBase(other) {
+    // Copy all relevant members from `other` to `this`.
+//    this->d = other.d;  // Example: Adjust as per your class members.
+    // Add similar assignments for other data members, if any.
+//}
+

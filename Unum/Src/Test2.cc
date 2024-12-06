@@ -396,7 +396,7 @@ void testSin() {
 
 
 void testArithmetic() {
-    ulong max = ((ulong) 1) << ((ulong) SIZE);
+    uint64_t max = ((uint64_t) 1) << ((uint64_t) SIZE);
 
     uint stride=8;
 
@@ -404,13 +404,13 @@ void testArithmetic() {
     posit16    as, bs, abs;
     //mpf_class  amean, gmean;
 
-    for (ulong i=0;i<max;i+=stride) {
+    for (uint64_t i=0;i<max;i+=stride) {
         a.d = i;
         as.value = a.d;
         if (a.isInfinity() && as.isNaR()) continue;
         
         
-        for (ulong j=0;j<max;j+=stride) {
+        for (uint64_t j=0;j<max;j+=stride) {
             b.d = j;
             bs.value = b.d;
 

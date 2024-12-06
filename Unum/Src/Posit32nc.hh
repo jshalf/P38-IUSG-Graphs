@@ -25,7 +25,8 @@ public:
     int32_t d; // Storage for the POSIT bit representation
     // public:
     Posit32nc(size_t _es,size_t maxsize=32);
-    Posit32nc(const Posit32nc &a):d(a.d),PositBase(a){}
+    Posit32nc(const Posit32nc &a):PositBase(a){this->d=a.d;}
+    // Posit32nc(const Posit32nc &other);
     // Posit32(size_t _es):PositBase(sizeof(int32_t)*8,_es),d(0){}
     virtual bool getSignBit();
     inline virtual void set(int32_t v) { d=v; }
@@ -72,6 +73,8 @@ public:
     // void get(double &a);
     // void get(int32_t &a); // get to nearest integer?
 };
+
+
 
 #endif
 

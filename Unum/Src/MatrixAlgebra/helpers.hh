@@ -84,7 +84,7 @@ void convert(vector<T> &out, vector<E> in) {
 }
 
 template<class T>
-void downcastComplex(vector<complex<T> > &out, const vector<complex<mpf_class>> &in) {
+void downcastComplex(vector<complex<T> > &out, const vector<complex<mpf_class> > &in) {
     int n = in.size();
     vector<mpf_class> reM(n), imM(n);
     for (int i=0;i<n;i++) { reM[i]=in[i].real(); imM[i]=in[i].imag(); } 
@@ -97,7 +97,7 @@ void downcastComplex(vector<complex<T> > &out, const vector<complex<mpf_class>> 
 }
 
 template<class T>
-void upcastComplex(vector<complex<mpf_class> > &out, const vector<complex<T>> &in) {
+void upcastComplex(vector<complex<mpf_class> > &out, const vector<complex<T> > &in) {
     int n = in.size();
     vector<T> re(n), im(n);
     for (int i=0;i<n;i++) { re[i]=in[i].real(); im[i]=in[i].imag(); } 

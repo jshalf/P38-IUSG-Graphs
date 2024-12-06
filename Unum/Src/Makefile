@@ -1,5 +1,7 @@
-CXX = c++ -g #-DHAVE_GL
-PATHBASE = /usr/local
+CXX = c++ 
+ #-DHAVE_GL
+PATHBASE = /opt/homebrew
+ # /usr/local
 CFLAGS = -I$(PATHBASE)/include -I./SoftPosit/source/include 
 LINK = -L$(PATHBASE)/lib -L. -L./SoftPosit/build/Linux-x86_64-GCC -lgmpxx -lgmp -lm -l:softposit.a 
 FL = /usr/local
