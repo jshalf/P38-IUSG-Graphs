@@ -232,7 +232,7 @@ $(OBJS_PRIMITIVES) $(OBJS_OTHERS): %$(OBJ): $(SOURCE_DIR)/%.c
 $(OBJS_SPECIALIZE): %$(OBJ): $(SOURCE_DIR)/$(SPECIALIZE_TYPE)/%.c
 	$(COMPILE_C) $(SOURCE_DIR)/$(SPECIALIZE_TYPE)/$*.c
 
-softposit$(LIB): $(OBJS_ALL) 
+libsoftposit$(LIB): $(OBJS_ALL) 
 	$(MAKELIB) $^
 	
 softposit$(SLIB): $(OBJS_ALL) 

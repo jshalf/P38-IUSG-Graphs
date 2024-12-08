@@ -10,10 +10,10 @@ Posit32nc::Posit32nc(size_t _es,size_t maxsize):PositBase(_es,maxsize),d(0){
 }
     // Posit32(size_t _es):PositBase(sizeof(int32_t)*8,_es),d(0){}
 
-bool Posit32nc::getSignBit(){
-        register uint32_t msb=1L<<(size-1);
-        return (this->d & msb)?1:0;
-}
+//bool Posit32nc::getSignBit(){
+//        register uint32_t msb=1L<<(size-1);
+//        return (this->d & msb)?1:0;
+//}
 
 
 unsigned int Posit32nc::getRegimeNbits(){

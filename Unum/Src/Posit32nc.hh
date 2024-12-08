@@ -28,7 +28,10 @@ public:
     Posit32nc(const Posit32nc &a):PositBase(a){this->d=a.d;}
     // Posit32nc(const Posit32nc &other);
     // Posit32(size_t _es):PositBase(sizeof(int32_t)*8,_es),d(0){}
-    virtual bool getSignBit();
+    virtual bool getSignBit(){
+        register uint32_t msb=1L<<(size-1);
+        return (this->d & msb)?1:0;
+    }
     inline virtual void set(int32_t v) { d=v; }
     // virtual void set(int32_t v){ d=(int32_t)v; }
     inline bool regimePolarity(){ // returns 1 if positive and 0 if negative?

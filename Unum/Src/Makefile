@@ -1,9 +1,9 @@
-CXX = c++ 
+CXX = g++
  #-DHAVE_GL
 PATHBASE = /opt/homebrew
  # /usr/local
 CFLAGS = -I$(PATHBASE)/include -I./SoftPosit/source/include 
-LINK = -L$(PATHBASE)/lib -L. -L./SoftPosit/build/Linux-x86_64-GCC -lgmpxx -lgmp -lm -l:softposit.a 
+LINK = -v -L$(PATHBASE)/lib -L. -L./SoftPosit/build/Linux-x86_64-GCC -lgmpxx -lgmp -lsoftposit -lm 
 FL = /usr/local
 ARCHIVE = /usr/bin/ar cr
 
@@ -29,24 +29,24 @@ INC = ${FLINC}
 #RESPATH = $(FL)/FL/mac.r
 #GLDLIBS = -framework AGL -framework OpenGL -framework Carbon -framework ApplicationServices
 VPATH = MatrixAlgebra/Sanjana 
-OBJECTS = Posit32.o PositBase.o Posit32nc.o bfloat16.o gmp_helpers.o 
+# OBJECTS = Posit32.o PositBase.o bfloat16.o gmp_helpers.o 
 
 all: softposit Test2 matrix 
 
 matrix: 
 	cd MatrixAlgebra && $(MAKE)
 
-#libPosit.a: PositBase.o Posit32.o Posit32nc.o 
-#	$(ARCHIVE) libPosit.a PositBase.o Posit32.o Posit32nc.o 
+libPosit.a: PositBase.o Posit32.o 
+	$(ARCHIVE) libPosit.a PositBase.o Posit32.o 
 
 softposit: 
 	cd SoftPosit/build/Linux-x86_64-GCC && $(MAKE)
 
-#Test.o: Test.cc PositBase.hh Posit32.hh Posit32nc.hh gmp_helpers.hh
-#	$(CXX) $(CFLAGS) -c Test.cc
+Test.o: Test.cc PositBase.hh Posit32.hh gmp_helpers.hh
+	$(CXX) $(CFLAGS) -c Test.cc
 
-#Test: Test.o libPosit.a softposit.a
-#	$(CXX) $(CFLAGS) -o Test Test.o $(LINK) -lPosit
+Test: Test.o libPosit.a
+	$(CXX) $(CFLAGS) -o Test Test.o $(LINK) -lPosit
 
 Test2: Test2.o SoftPosit $(OBJECTS)
 	$(CXX) $(CFLAGS) -o Test2 Test2.o $(OBJECTS) $(LINK) 
@@ -69,8 +69,8 @@ PositBase.o: PositBase.cc PositBase.hh
 Posit32.o: Posit32.cc Posit32.hh 
 	$(CXX) $(CFLAGS) -c Posit32.cc 
 
-Posit32nc.o: Posit32nc.cc Posit32nc.hh 
-	$(CXX) $(CFLAGS) -c Posit32nc.cc
+#Posit32nc.o: Posit32nc.cc Posit32nc.hh 
+#	$(CXX) $(CFLAGS) -c Posit32nc.cc
 
 bfloat16.o: bfloat16.cc bfloat16.hh 
 	$(CXX) $(CFLAGS) -c bfloat16.cc
