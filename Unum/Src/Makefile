@@ -22,14 +22,14 @@ GLLIBS = -lfltk_gl -framework AGL -framework OpenGL -framework AGL -framework Op
 #LINK = -L$(FL)/lib -lfltk_forms -lfltk_images -lfltk_png -lfltk_jpeg -lfltk_gl -lfltk -framework AGL -framework OpenGL  -framework Carbon -framework ApplicationServices -framework Cocoa -framework AudioToolbox
 
 LINK_FL= ${LINKFLTKGL} ${LINKFLTK} ${GLDLIBS}
-XLIBS = -L/usr/X11R6/lib -lX11 -lXmu -lXext
+#XLIBS = -L/usr/X11R6/lib -lX11 -lXmu -lXext
 # LIBS = ${FLLIB} ${GLLIBS}
 INC = ${FLINC}
 #APLRES = /Developer/Tools/Rez -t APPL -o
 #RESPATH = $(FL)/FL/mac.r
 #GLDLIBS = -framework AGL -framework OpenGL -framework Carbon -framework ApplicationServices
 VPATH = MatrixAlgebra/Sanjana 
-# OBJECTS = Posit32.o PositBase.o bfloat16.o gmp_helpers.o 
+OBJECTS = Posit32.o PositBase.o bfloat16.o gmp_helpers.o 
 
 all: softposit Test2 matrix 
 

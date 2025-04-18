@@ -22,7 +22,7 @@ void getVectorComplex(vector<complex<mpf_class> > &v, int itemSize) {
     int n = v.size();
     for (int i = 0; i < n; i++) v[i] = complex<mpf_class>((rand(r)-.5)*2*itemSize, 0);
 }
-
+/*
 mpf_class mse(vector<complex<mpf_class> > modified, vector<complex<mpf_class> > original) {
     mpf_class sum(0), pow;
     int n = modified.size();
@@ -55,6 +55,7 @@ mpf_class mse(vector<vector<complex<mpf_class> > > modified, vector<vector<compl
     sum /= m*n;
     return sum;
 }
+ */
 
 mpf_class mse(vector<vector<mpf_class> > modified, vector<vector<mpf_class> > original) {
     mpf_class sum(0), pow;
@@ -73,6 +74,7 @@ mpf_class mse(vector<vector<mpf_class> > modified, vector<vector<mpf_class> > or
     sum /= m*n;
     return sum;
 }
+
 
 //Set matrix to be diagonal with a given condition number.
 //In this case condition number = max(cond, n);

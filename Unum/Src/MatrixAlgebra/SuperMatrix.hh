@@ -1,6 +1,6 @@
 #ifndef __SUPERMATRIX_HH_
 #define __SUPERMATRIX_HH_
-#include <omp.h>
+// #include <omp.h>
 #include <queue>
 #include "Matrix.hh"
 

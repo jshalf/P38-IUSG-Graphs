@@ -305,7 +305,7 @@ void convolveTest() {
 }
 */
 
-
+/*
 void fftImage(string imgFilename, string infofile, bool general=0) {
     CImg<float> img(imgFilename.c_str());
     
@@ -374,7 +374,7 @@ void fftImage(string imgFilename, string infofile, bool general=0) {
         imgfile.close();
     }
     */
-    
+    /*
     if (general) {
         ofstream info(infofile, ofstream::app);
         info << imgFilename << endl;
@@ -391,6 +391,7 @@ void fftImage(string imgFilename, string infofile, bool general=0) {
 
     //for (auto p : files) system((string("xdg-open ") + p.first).c_str());
 }
+*/
 
 /*
 void correlateImage(string imgFilename, string kernelFilename, string output) {
@@ -743,7 +744,7 @@ int main(int argc, char*argv[]) {
             imgFile = args[2];
             infofile = args[3];
             general = find(begin(args), end(args), "general") != end(args);
-            fftImage(imgFile, infofile, general);
+           // fftImage(imgFile, infofile, general);
             break;
         case 4:
             type = stoi(args[3]);

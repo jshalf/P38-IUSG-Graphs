@@ -1,5 +1,6 @@
 CXX = c++ -g -DHAVE_GL
-PATHBASE = /usr/local
+PATHBASE = /opt/homebrew
+# was /usr/local
 CFLAGS = -I$(PATHBASE)/include -I.. 
 LINK = -L$(PATHBASE)/lib -L/usr/X11R6/lib -L. -L.. -L../SoftPosit/build/Linux-x86_64-GCC -lgmpxx \
 	-lpthread -lX11 -lgmp -lm -lboost_system -lboost_filesystem

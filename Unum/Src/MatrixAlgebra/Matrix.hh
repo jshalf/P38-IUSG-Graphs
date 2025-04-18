@@ -405,7 +405,7 @@ public:
     }
     
     bool solveLowerTriangularSystem(const Matrix L, vec &x,const vec b) const {
-        if(!L.isLowerTrangular()) return false;
+        if(!L.isLowerTriangular()) return false;
         if (!(x.size() == nRows())) return false;
         // solve sequentially by forward-substitution from top to bottom
         for(int i=0;i<L.nRows();i++){
@@ -1201,7 +1201,8 @@ public:
         Matrix A(*this);
 
         Matrix r(n,n);
-        while (abs(r.maxEntry()-1) > tolerance) {
+        //while (abs(r.maxEntry()-1) > tolerance) {
+        while (abs(r.max()-1) > tolerance) {
 
             for (int i=0;i<A.nCols();i++) {
                 r.m[i][i] = 1/sqrt(vectorNormOne(A.m[i]));

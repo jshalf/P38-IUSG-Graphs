@@ -23,10 +23,11 @@ void getVector(vector<mpf_class> &v, int itemSize);
 //Same as getVector but complex entries with imaginary components set to zero. 
 void getVectorComplex(vector<complex<mpf_class> > &v, int itemSize);
 
-mpf_class mse(vector<complex<mpf_class> >  modified, vector<complex<mpf_class> > original);
+//mpf_class mse(vector<complex<mpf_class> >  modified, vector<complex<mpf_class> > original);
 
 mpf_class mse(vector<vector<mpf_class> > modified, vector<vector<mpf_class> > original);
-mpf_class mse(vector<vector<complex<mpf_class> > > modified, vector<vector<complex<mpf_class> > > original);
+// mpf_class mse(vector<vector<complex<mpf_class> > > modified, vector<vector<complex<mpf_class> > > original);
+
 
 int closestPowerTwo(int n);
 double closestPowerTwo(double d);

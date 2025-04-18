@@ -80,7 +80,7 @@ LIB = .a
 SLIB = .so
 
 .PHONY: all
-all: softposit$(LIB)
+all: libsoftposit$(LIB)
 
 quad: SOFTPOSIT_OPTS+= -DSOFTPOSIT_QUAD -lquadmath
 quad: all
